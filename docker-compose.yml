@@ -35,6 +35,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       NODE_ENV: production
       PORT: 3000
+      # Faqat birinchi `npm run seed` da o'qiladi.
+      PSKLUB_CLUB_NAME: ${PSKLUB_CLUB_NAME:-PS Klub}
+      PSKLUB_OPERATOR_PIN: ${PSKLUB_OPERATOR_PIN:-}
+      PSKLUB_ADMIN_PIN: ${PSKLUB_ADMIN_PIN:-}
+      PSKLUB_OWNER_PIN: ${PSKLUB_OWNER_PIN:-}
     ports:
       - '3000:3000'
 
