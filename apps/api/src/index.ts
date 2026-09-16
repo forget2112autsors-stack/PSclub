@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { env } from './env.ts';
 import { prisma, audit } from './db.ts';
 import { requireAuth, requireManager, verifyPin, type TokenPayload } from './auth.ts';
+import { settingsRoutes } from './routes/settings.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -17,6 +18,9 @@ await app.register(cors, { origin: true, credentials: true });
 await app.register(jwt, { secret: env.JWT_SECRET, sign: { expiresIn: SESSION_TTL } });
 
 app.setErrorHandler((err, _req, reply) => {
+  if (err instanceof z.ZodError) {
+    return reply.code(400).send({ error: 'So\'rov maydonlari noto\'g\'ri.' });
+  }
   if (err.validation) return reply.code(400).send({ error: 'So\'rov maydonlari noto\'g\'ri.' });
   app.log.error(err);
   return reply.code(500).send({ error: 'Kutilmagan xatolik.' });
@@ -42,7 +46,7 @@ const loginBody = z.object({
 
 app.post('/api/auth/login', async (req, reply) => {
   const parsed = loginBody.safeParse(req.body);
-  if (!parsed.success) return reply.code(400).send({ error: 'PIN-kod noto\'g\'ri.' });
+  if (!parsed.success) return reply.code(401).send({ error: 'PIN-kod noto\'g\'ri.' });
 
   const user = await prisma.appUser.findUnique({ where: { id: parsed.data.userId } });
   if (!user || !user.isActive || !(await verifyPin(parsed.data.pin, user.pinHash))) {
@@ -63,25 +67,6 @@ app.post('/api/auth/login', async (req, reply) => {
 
 app.get('/api/me', { onRequest: requireAuth }, async (req) => ({ user: req.user }));
 
-app.get('/api/station-types', { onRequest: requireAuth }, async () =>
-  prisma.stationType.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }),
-);
-
-app.get('/api/stations', { onRequest: requireAuth }, async () =>
-  prisma.station.findMany({
-    include: { type: { select: { id: true, name: true } } },
-    orderBy: [{ sortOrder: 'asc' }, { number: 'asc' }],
-  }),
-);
-
-app.get('/api/tariffs', { onRequest: requireAuth }, async () =>
-  prisma.tariff.findMany({
-    where: { isActive: true },
-    include: { schedules: true },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-  }),
-);
-
 app.get('/api/audit', { onRequest: requireAuth }, async (req, reply) => {
   if (!requireManager(req, reply)) return;
   return prisma.auditLog.findMany({
@@ -90,6 +75,8 @@ app.get('/api/audit', { onRequest: requireAuth }, async (req, reply) => {
     include: { user: { select: { fullName: true } } },
   });
 });
+
+await app.register(settingsRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
