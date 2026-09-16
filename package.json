@@ -1,0 +1,22 @@
+{
+  "name": "psklub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PlayStation klubini boshqarish tizimi",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "dev:api": "npm run dev --workspace @psklub/api",
+    "dev:web": "npm run dev --workspace @psklub/web",
+    "db:generate": "npm run db:generate --workspace @psklub/api",
+    "db:migrate": "npm run db:migrate --workspace @psklub/api",
+    "seed": "npm run seed --workspace @psklub/api"
+  }
+}

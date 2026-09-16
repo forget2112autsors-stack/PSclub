@@ -1,0 +1,13 @@
+{
+  "name": "@psklub/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Biznes mantiqi — bazadan mustaqil (TZ 2.3)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --no-warnings --test \"tests/**/*.test.ts\""
+  }
+}

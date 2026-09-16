@@ -1,0 +1,497 @@
+// PS Klub — ma'lumotlar bazasi sxemasi (TZ 6-bo'lim).
+//
+// Pul: butun so'mda, Int. TZ da BIGINT yozilgan; bitta yozuvdagi eng katta
+// summa ham Int chegarasiga (≈2.1 mlrd so'm) yaqinlashmaydi, JSON bilan
+// ishlash esa ancha qulay. Yig'indi (SUM) Postgres tomonida baribir bigint
+// qaytaradi, shuning uchun yillik hisobotda ham chegara muammosi yo'q.
+//
+// Vaqt: hamma joyda UTC (TZ M8), ko'rsatishda klub vaqtiga o'giriladi.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OPERATOR
+  ADMIN
+  OWNER
+}
+
+enum StationStatus {
+  FREE
+  BUSY
+  OUT_OF_SERVICE
+}
+
+enum TariffKind {
+  HOURLY
+  PACKAGE
+}
+
+enum Rounding {
+  MINUTE
+  QUARTER
+  HOUR
+}
+
+enum PaymentMode {
+  PREPAID
+  POSTPAID
+}
+
+enum SessionStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BALANCE
+  PACKAGE
+  ONLINE
+}
+
+enum StockMovementType {
+  IN
+  SALE
+  INVENTORY
+  WRITE_OFF
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  FULFILLED
+  NO_SHOW
+}
+
+model Club {
+  id                 String   @id @default(uuid())
+  name               String
+  timezone           String   @default("Asia/Tashkent")
+  tzOffsetMinutes    Int      @default(300) @map("tz_offset_minutes")
+  defaultCreditLimit Int      @default(600000) @map("default_credit_limit")
+  cashDiffThreshold  Int      @default(20000) @map("cash_diff_threshold")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  users        AppUser[]
+  stationTypes StationType[]
+  stations     Station[]
+  tariffs      Tariff[]
+  categories   ProductCategory[]
+  products     Product[]
+  customers    Customer[]
+  shifts       Shift[]
+
+  @@map("club")
+}
+
+model AppUser {
+  id        String   @id @default(uuid())
+  clubId    String   @map("club_id")
+  fullName  String   @map("full_name")
+  role      Role
+  pinHash   String   @map("pin_hash")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  club     Club      @relation(fields: [clubId], references: [id])
+  sessions Session[]
+  shifts   Shift[]
+  payments Payment[]
+  expenses Expense[]
+  audits   AuditLog[]
+
+  @@index([clubId])
+  @@map("app_user")
+}
+
+model StationType {
+  id        String @id @default(uuid())
+  clubId    String @map("club_id")
+  name      String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  club     Club      @relation(fields: [clubId], references: [id])
+  stations Station[]
+  tariffs  Tariff[]
+
+  @@index([clubId])
+  @@map("station_type")
+}
+
+model Station {
+  id           String        @id @default(uuid())
+  clubId       String        @map("club_id")
+  typeId       String        @map("type_id")
+  number       Int
+  name         String?
+  status       StationStatus @default(FREE)
+  gamepadCount Int           @default(2) @map("gamepad_count")
+  note         String?
+  sortOrder    Int           @default(0) @map("sort_order")
+
+  club     Club         @relation(fields: [clubId], references: [id])
+  type     StationType  @relation(fields: [typeId], references: [id])
+  sessions Session[]
+  bookings Booking[]
+
+  @@unique([clubId, number])
+  @@map("station")
+}
+
+/// Paket tariflar ham shu jadvalda (kind = PACKAGE) — TZ 6-bo'limida alohida
+/// `package` jadvali ko'rsatilgan edi, lekin paketning ham amal qilish oynasi
+/// bor, shuning uchun bitta jadval va bitta tariff_schedule yetarli.
+model Tariff {
+  id                 String     @id @default(uuid())
+  clubId             String     @map("club_id")
+  typeId             String?    @map("type_id")
+  name               String
+  kind               TariffKind @default(HOURLY)
+  isActive           Boolean    @default(true) @map("is_active")
+  priority           Int        @default(0)
+  pricePerHour       Int        @default(0) @map("price_per_hour")
+  minMinutes         Int        @default(0) @map("min_minutes")
+  rounding           Rounding   @default(MINUTE)
+  packagePrice       Int?       @map("package_price")
+  packageMinutes     Int?       @map("package_minutes")
+  gamepadMultipliers Json       @default("{}") @map("gamepad_multipliers")
+  sortOrder          Int        @default(0) @map("sort_order")
+
+  club      Club             @relation(fields: [clubId], references: [id])
+  type      StationType?     @relation(fields: [typeId], references: [id])
+  schedules TariffSchedule[]
+  sessions  Session[]
+  segments  SessionSegment[]
+
+  @@index([clubId])
+  @@map("tariff")
+}
+
+model TariffSchedule {
+  id          String @id @default(uuid())
+  tariffId    String @map("tariff_id")
+  /// Bo'sh massiv = har kuni. 0 = Yakshanba … 6 = Shanba.
+  daysOfWeek  Int[]  @map("days_of_week")
+  startMinute Int    @map("start_minute")
+  endMinute   Int    @map("end_minute")
+
+  tariff Tariff @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+
+  @@index([tariffId])
+  @@map("tariff_schedule")
+}
+
+model Session {
+  id              String        @id @default(uuid())
+  stationId       String        @map("station_id")
+  tariffId        String?       @map("tariff_id")
+  customerId      String?       @map("customer_id")
+  operatorId      String        @map("operator_id")
+  shiftId         String        @map("shift_id")
+  status          SessionStatus @default(ACTIVE)
+  paymentMode     PaymentMode   @map("payment_mode")
+  startedAt       DateTime      @map("started_at")
+  endedAt         DateTime?     @map("ended_at")
+  creditLimit     Int           @default(0) @map("credit_limit")
+  prepaidMinutes  Int?          @map("prepaid_minutes")
+  gamepads        Int           @default(2)
+  gamepadsReturned Int?         @map("gamepads_returned")
+  gameAmount      Int           @default(0) @map("game_amount")
+  itemsAmount     Int           @default(0) @map("items_amount")
+  discount        Int           @default(0)
+  totalAmount     Int           @default(0) @map("total_amount")
+  note            String?
+  cancelReason    String?       @map("cancel_reason")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  station  Station          @relation(fields: [stationId], references: [id])
+  tariff   Tariff?          @relation(fields: [tariffId], references: [id])
+  customer Customer?        @relation(fields: [customerId], references: [id])
+  operator AppUser          @relation(fields: [operatorId], references: [id])
+  shift    Shift            @relation(fields: [shiftId], references: [id])
+  segments SessionSegment[]
+  pauses   SessionPause[]
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([stationId, status])
+  @@index([shiftId])
+  @@index([startedAt])
+  @@map("session")
+}
+
+/// Seansning tarif bo'yicha bo'laklari — yopilgandan keyin hisob qanday
+/// chiqqanini keyin ham tushuntirib bera olish uchun saqlanadi.
+model SessionSegment {
+  id            String   @id @default(uuid())
+  sessionId     String   @map("session_id")
+  tariffId      String?  @map("tariff_id")
+  tariffName    String   @map("tariff_name")
+  startedAt     DateTime @map("started_at")
+  endedAt       DateTime @map("ended_at")
+  rawMinutes    Int      @map("raw_minutes")
+  billedMinutes Int      @map("billed_minutes")
+  amount        Int
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tariff  Tariff? @relation(fields: [tariffId], references: [id])
+
+  @@index([sessionId])
+  @@map("session_segment")
+}
+
+model SessionPause {
+  id        String    @id @default(uuid())
+  sessionId String    @map("session_id")
+  startedAt DateTime  @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  reason    String?
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("session_pause")
+}
+
+model ProductCategory {
+  id        String @id @default(uuid())
+  clubId    String @map("club_id")
+  name      String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  club     Club      @relation(fields: [clubId], references: [id])
+  products Product[]
+
+  @@map("product_category")
+}
+
+model Product {
+  id         String  @id @default(uuid())
+  clubId     String  @map("club_id")
+  categoryId String? @map("category_id")
+  name       String
+  barcode    String?
+  unit       String  @default("dona")
+  costPrice  Int     @default(0) @map("cost_price")
+  salePrice  Int     @map("sale_price")
+  stockQty   Int     @default(0) @map("stock_qty")
+  minStock   Int     @default(0) @map("min_stock")
+  isQuickKey Boolean @default(false) @map("is_quick_key")
+  isActive   Boolean @default(true) @map("is_active")
+  sortOrder  Int     @default(0) @map("sort_order")
+
+  club      Club             @relation(fields: [clubId], references: [id])
+  category  ProductCategory? @relation(fields: [categoryId], references: [id])
+  movements StockMovement[]
+  items     OrderItem[]
+
+  @@index([clubId])
+  @@map("product")
+}
+
+model StockMovement {
+  id        String            @id @default(uuid())
+  productId String            @map("product_id")
+  type      StockMovementType
+  qty       Int
+  unitCost  Int?              @map("unit_cost")
+  note      String?
+  createdAt DateTime          @default(now()) @map("created_at")
+  createdBy String?           @map("created_by")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@map("stock_movement")
+}
+
+/// Sotilgan pozitsiya. sessionId bo'sh bo'lsa — tez kassa (o'yinsiz sotuv).
+model OrderItem {
+  id         String   @id @default(uuid())
+  sessionId  String?  @map("session_id")
+  shiftId    String   @map("shift_id")
+  productId  String   @map("product_id")
+  qty        Int
+  unitPrice  Int      @map("unit_price")
+  amount     Int
+  createdAt  DateTime @default(now()) @map("created_at")
+  createdBy  String   @map("created_by")
+
+  session Session? @relation(fields: [sessionId], references: [id])
+  shift   Shift    @relation(fields: [shiftId], references: [id])
+  product Product  @relation(fields: [productId], references: [id])
+
+  @@index([sessionId])
+  @@index([shiftId])
+  @@map("order_item")
+}
+
+model Shift {
+  id           String      @id @default(uuid())
+  clubId       String      @map("club_id")
+  operatorId   String      @map("operator_id")
+  status       ShiftStatus @default(OPEN)
+  openedAt     DateTime    @default(now()) @map("opened_at")
+  closedAt     DateTime?   @map("closed_at")
+  openingCash  Int         @default(0) @map("opening_cash")
+  expectedCash Int?        @map("expected_cash")
+  countedCash  Int?        @map("counted_cash")
+  cashDiff     Int?        @map("cash_diff")
+  note         String?
+
+  club     Club        @relation(fields: [clubId], references: [id])
+  operator AppUser     @relation(fields: [operatorId], references: [id])
+  sessions Session[]
+  payments Payment[]
+  expenses Expense[]
+  items    OrderItem[]
+
+  @@index([clubId, status])
+  @@map("shift")
+}
+
+model Payment {
+  id         String        @id @default(uuid())
+  shiftId    String        @map("shift_id")
+  sessionId  String?       @map("session_id")
+  customerId String?       @map("customer_id")
+  operatorId String        @map("operator_id")
+  method     PaymentMethod
+  amount     Int
+  note       String?
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  shift    Shift     @relation(fields: [shiftId], references: [id])
+  session  Session?  @relation(fields: [sessionId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  operator AppUser   @relation(fields: [operatorId], references: [id])
+
+  @@index([shiftId])
+  @@index([sessionId])
+  @@map("payment")
+}
+
+model Expense {
+  id         String   @id @default(uuid())
+  shiftId    String   @map("shift_id")
+  operatorId String   @map("operator_id")
+  category   String
+  amount     Int
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  shift    Shift   @relation(fields: [shiftId], references: [id])
+  operator AppUser @relation(fields: [operatorId], references: [id])
+
+  @@index([shiftId])
+  @@map("expense")
+}
+
+model Customer {
+  id          String    @id @default(uuid())
+  clubId      String    @map("club_id")
+  fullName    String    @map("full_name")
+  phone       String?
+  birthDate   DateTime? @map("birth_date")
+  telegramId  String?   @unique @map("telegram_id")
+  balance     Int       @default(0)
+  bonusPoints Int       @default(0) @map("bonus_points")
+  isBlocked   Boolean   @default(false) @map("is_blocked")
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  club        Club                @relation(fields: [clubId], references: [id])
+  sessions    Session[]
+  payments    Payment[]
+  balanceTxs  CustomerBalanceTx[]
+  packages    CustomerPackage[]
+  bookings    Booking[]
+
+  @@index([clubId])
+  @@index([phone])
+  @@map("customer")
+}
+
+model CustomerBalanceTx {
+  id           String   @id @default(uuid())
+  customerId   String   @map("customer_id")
+  amount       Int
+  balanceAfter Int      @map("balance_after")
+  reason       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String?  @map("created_by")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@map("customer_balance_tx")
+}
+
+model CustomerPackage {
+  id             String    @id @default(uuid())
+  customerId     String    @map("customer_id")
+  tariffId       String?   @map("tariff_id")
+  name           String
+  totalMinutes   Int       @map("total_minutes")
+  remainingMinutes Int     @map("remaining_minutes")
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@map("customer_package")
+}
+
+model Booking {
+  id         String        @id @default(uuid())
+  stationId  String        @map("station_id")
+  customerId String?       @map("customer_id")
+  status     BookingStatus @default(PENDING)
+  startsAt   DateTime      @map("starts_at")
+  endsAt     DateTime?     @map("ends_at")
+  note       String?
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  station  Station   @relation(fields: [stationId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([stationId, startsAt])
+  @@map("booking")
+}
+
+/// Audit jurnali hech qachon o'chirilmaydi — TZ M8.
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  entity     String
+  entityId   String?  @map("entity_id")
+  action     String
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  isCritical Boolean  @default(false) @map("is_critical")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user AppUser? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+  @@map("audit_log")
+}
