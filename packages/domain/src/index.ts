@@ -15,3 +15,9 @@ export {
   gamepadMultiplier,
   roundMinutes,
 } from './tariff/calculate.ts';
+
+export type { OrderLine, SessionTotals, TotalsInput } from './session/totals.ts';
+export { itemsAmount, sessionTotals } from './session/totals.ts';
+
+export type { CashInput, CashReconciliation } from './shift/cash.ts';
+export { reconcileCash } from './shift/cash.ts';
