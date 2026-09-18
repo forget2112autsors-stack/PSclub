@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { to: '/mijozlar', label: 'Mijozlar' },
   { to: '/ombor', label: 'Ombor' },
   { to: '/hisobotlar', label: 'Hisobotlar' },
+  { to: '/audit', label: 'Audit jurnali', managerOnly: true },
   { to: '/sozlamalar', label: 'Sozlamalar', managerOnly: true },
 ];
 

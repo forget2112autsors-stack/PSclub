@@ -134,18 +134,20 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // Tez kassa — o'yinsiz sotuv (TZ M3.2).
+  // Tez kassa — o'yinsiz sotuv (TZ M3.2). Bir nechta mahsulot birga sotiladi.
   app.post('/api/sales', async (req) => {
     const body = z
       .object({
-        productId: z.string().min(1),
-        qty: z.number().int().min(1),
+        items: z.array(z.object({ productId: z.string().min(1), qty: z.number().int().min(1) })).min(1),
         payments: z.array(paymentSchema).default([]),
       })
       .parse(req.body);
     const shift = await currentShift(req.user.clubId);
 
-    await addItem(null, body.productId, body.qty, { userId: req.user.sub, shiftId: shift.id });
+    // Qoldiq yetmasa addItem xato beradi va keyingilari yozilmaydi.
+    for (const item of body.items) {
+      await addItem(null, item.productId, item.qty, { userId: req.user.sub, shiftId: shift.id });
+    }
     for (const payment of body.payments) {
       if (payment.amount <= 0) continue;
       await prisma.payment.create({
