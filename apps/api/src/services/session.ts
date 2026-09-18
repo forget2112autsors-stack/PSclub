@@ -525,6 +525,7 @@ export async function listStations(clubId: string) {
       type: station.type.name,
       status: station.status,
       note: station.note,
+      gamepadCount: station.gamepadCount,
     };
     if (!session) return { ...base, session: null };
 

@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '../lib/api.ts';
 import { useRealtime } from '../lib/realtime.ts';
+import { SessionDetail } from '../components/SessionDetail.tsx';
+import { SessionOpen } from '../components/SessionOpen.tsx';
 
 interface MapSession {
   id: string;
@@ -25,6 +27,7 @@ interface MapStation {
   type: string;
   status: 'FREE' | 'BUSY' | 'OUT_OF_SERVICE';
   note: string | null;
+  gamepadCount?: number;
   session: MapSession | null;
 }
 
@@ -75,6 +78,8 @@ function lookOf(station: MapStation, minutes: number): Look {
 export function StationMap() {
   const client = useQueryClient();
   const [tick, setTick] = useState(() => Date.now());
+  const [opening, setOpening] = useState<MapStation | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ['map'],
@@ -135,7 +140,10 @@ export function StationMap() {
           return (
             <article
               key={station.id}
-              className={`tap rounded-xl border p-4 transition ${look.card}`}
+              onClick={session ? () => setViewing(session.id) : undefined}
+              className={`tap rounded-xl border p-4 transition ${look.card} ${
+                session ? 'cursor-pointer hover:brightness-125' : ''
+              }`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="text-lg font-semibold">{station.number}</span>
@@ -149,7 +157,10 @@ export function StationMap() {
                   {station.status === 'FREE' && (
                     <button
                       type="button"
-                      className="tap mt-3 w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium transition hover:bg-emerald-500"
+                      disabled={!query.data?.shift}
+                      title={query.data?.shift ? undefined : 'Avval smenani oching'}
+                      onClick={() => setOpening(station)}
+                      className="tap mt-3 w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium transition hover:bg-emerald-500 disabled:opacity-40"
                     >
                       Boshlash
                     </button>
@@ -180,6 +191,17 @@ export function StationMap() {
           Joylar hali qo'shilmagan — Sozlamalar oynasidan kiriting.
         </p>
       )}
+
+      {opening && (
+        <SessionOpen
+          stationId={opening.id}
+          stationNumber={opening.number}
+          gamepadCount={opening.gamepadCount ?? 4}
+          onClose={() => setOpening(null)}
+        />
+      )}
+
+      {viewing && <SessionDetail sessionId={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
