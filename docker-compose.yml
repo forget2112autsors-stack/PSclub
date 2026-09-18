@@ -1,37 +1,20 @@
-# PS Klub — TZ 7.2 bo'yicha: hammasi bitta VPS da.
+# PS Klub — API konteyneri.
 #
-#   cp .env.example .env    (qiymatlarni to'ldiring)
-#   docker compose up -d
+# Baza bu yerda emas: PostgreSQL Supabase'da turadi (TZ 7.2 dagi "faqat bulut"
+# qaroriga muvofiq). Shuning uchun `db` xizmati yo'q — ulanish .env dagi
+# DATABASE_URL orqali beriladi.
 #
-# Baza konteyner ichida emas, `pgdata` hajmida saqlanadi — konteyner qayta
-# qurilsa ham ma'lumot qoladi.
+#   docker compose up -d --build
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
       JWT_SECRET: ${JWT_SECRET}
       NODE_ENV: production
       PORT: 3000
@@ -42,6 +25,3 @@ services:
       PSKLUB_OWNER_PIN: ${PSKLUB_OWNER_PIN:-}
     ports:
       - '3000:3000'
-
-volumes:
-  pgdata:

@@ -11,9 +11,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Supabase: ishlashda pooler orqali ulanamiz, migratsiya esa to'g'ridan-to'g'ri
+// ulanishni talab qiladi (pooler DDL bilan to'liq ishlamaydi).
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {

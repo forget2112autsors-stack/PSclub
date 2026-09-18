@@ -6,7 +6,9 @@ import { z } from 'zod';
 import { env } from './env.ts';
 import { prisma, audit } from './db.ts';
 import { requireAuth, requireManager, verifyPin, type TokenPayload } from './auth.ts';
+import { BusinessError } from './errors.ts';
 import { settingsRoutes } from './routes/settings.ts';
+import { sessionRoutes } from './routes/sessions.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -18,10 +20,13 @@ await app.register(cors, { origin: true, credentials: true });
 await app.register(jwt, { secret: env.JWT_SECRET, sign: { expiresIn: SESSION_TTL } });
 
 app.setErrorHandler((err, _req, reply) => {
+  if (err instanceof BusinessError) return reply.code(400).send({ error: err.message });
   if (err instanceof z.ZodError) {
     return reply.code(400).send({ error: 'So\'rov maydonlari noto\'g\'ri.' });
   }
-  if (err.validation) return reply.code(400).send({ error: 'So\'rov maydonlari noto\'g\'ri.' });
+  if ((err as { validation?: unknown }).validation) {
+    return reply.code(400).send({ error: 'So\'rov maydonlari noto\'g\'ri.' });
+  }
   app.log.error(err);
   return reply.code(500).send({ error: 'Kutilmagan xatolik.' });
 });
@@ -77,6 +82,7 @@ app.get('/api/audit', { onRequest: requireAuth }, async (req, reply) => {
 });
 
 await app.register(settingsRoutes);
+await app.register(sessionRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
