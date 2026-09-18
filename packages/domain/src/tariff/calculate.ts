@@ -79,7 +79,21 @@ function resolveTariff(
     if (tariff.kind !== 'HOURLY') continue;
     if (tariff.stationTypeId !== null && tariff.stationTypeId !== stationTypeId) continue;
     if (!tariff.windows.some((w) => windowCovers(w, day, minute))) continue;
-    if (winner === null || tariff.priority > winner.priority) winner = tariff;
+
+    if (winner === null || tariff.priority > winner.priority) {
+      winner = tariff;
+      continue;
+    }
+    // Ustuvorlik teng bo'lsa joy turiga aniq bog'langan tarif yutadi: "barcha
+    // turlar" uchun yozilgan umumiy tarif aniqrog'ini bosib ketmasligi kerak.
+    // Aks holda qaysi biri ishlashi bazadagi tartibga bog'lib qolardi.
+    if (
+      tariff.priority === winner.priority &&
+      winner.stationTypeId === null &&
+      tariff.stationTypeId !== null
+    ) {
+      winner = tariff;
+    }
   }
   return winner;
 }

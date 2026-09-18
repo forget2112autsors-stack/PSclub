@@ -122,6 +122,49 @@ test('M2.3: ustuvorligi yuqori tarif yutadi', () => {
   assert.equal(result.gameAmount, 20_000);
 });
 
+test('ustuvorlik teng bo\'lsa joy turiga bog\'langan tarif yutadi', () => {
+  const umumiy = tariff({
+    id: 'umumiy',
+    name: 'Hamma turlar uchun',
+    stationTypeId: null,
+    pricePerHour: 30_000,
+    windows: [{ daysOfWeek: [], startMinute: H(9), endMinute: H(22) }],
+  });
+
+  // Ro'yxat tartibi ikki xil bo'lsa ham natija bir xil bo'lishi kerak.
+  for (const list of [[umumiy, kunduzi], [kunduzi, umumiy]]) {
+    const result = calculateSession({
+      ...base,
+      tariffs: list,
+      start: local('10', 12),
+      end: local('10', 13),
+    });
+    assert.equal(result.segments[0].tariffId, 'kunduzi');
+    assert.equal(result.gameAmount, 40_000);
+  }
+});
+
+test('umumiy tarif faqat o\'ziga mos tarif bo\'lmaganda ishlaydi', () => {
+  const umumiy = tariff({
+    id: 'umumiy',
+    name: 'Hamma turlar uchun',
+    stationTypeId: null,
+    pricePerHour: 30_000,
+    windows: [{ daysOfWeek: [], startMinute: H(9), endMinute: H(22) }],
+  });
+
+  const result = calculateSession({
+    ...base,
+    stationTypeId: 'boshqa-tur',
+    tariffs: [kunduzi, umumiy],
+    start: local('10', 12),
+    end: local('10', 13),
+  });
+
+  assert.equal(result.segments[0].tariffId, 'umumiy');
+  assert.equal(result.gameAmount, 30_000);
+});
+
 test('hafta kuni mos kelmasa tarif qo\'llanmaydi', () => {
   // 2026-09-12 — Shanba (6). Faqat Dushanba uchun tarif.
   const dushanba = tariff({
