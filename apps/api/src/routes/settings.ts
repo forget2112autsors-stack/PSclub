@@ -217,6 +217,104 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
+const categoryBody = z.object({
+  name: z.string().min(1),
+  sortOrder: z.number().int().default(0),
+});
+
+const productBody = z.object({
+  name: z.string().min(1),
+  categoryId: z.string().nullable().default(null),
+  barcode: z.string().nullable().default(null),
+  unit: z.string().default('dona'),
+  costPrice: z.number().int().min(0).default(0),
+  salePrice: z.number().int().min(0),
+  minStock: z.number().int().min(0).default(0),
+  isQuickKey: z.boolean().default(false),
+  sortOrder: z.number().int().default(0),
+});
+
+export async function catalogRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('onRequest', requireAuth);
+
+  app.get('/api/product-categories', async (req) =>
+    prisma.productCategory.findMany({
+      where: { clubId: req.user.clubId },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    }),
+  );
+
+  app.post('/api/product-categories', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = categoryBody.parse(req.body);
+    const created = await prisma.productCategory.create({
+      data: { ...body, clubId: req.user.clubId },
+    });
+    await audit({ userId: req.user.sub, entity: 'ProductCategory', entityId: created.id, action: 'create', newValue: body });
+    return created;
+  });
+
+  app.post('/api/products', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = productBody.parse(req.body);
+    const created = await prisma.product.create({ data: { ...body, clubId: req.user.clubId } });
+    await audit({ userId: req.user.sub, entity: 'Product', entityId: created.id, action: 'create', newValue: body });
+    return created;
+  });
+
+  app.patch('/api/products/:id', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const { id } = idParam.parse(req.params);
+    const body = productBody.partial().extend({ isActive: z.boolean().optional() }).parse(req.body);
+
+    const before = await prisma.product.findUnique({ where: { id } });
+    if (!before) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+
+    const updated = await prisma.product.update({ where: { id }, data: body });
+    await audit({ userId: req.user.sub, entity: 'Product', entityId: id, action: 'update', oldValue: before, newValue: updated, isCritical: body.salePrice !== undefined });
+    return updated;
+  });
+
+  // Ombor kirimi — TZ M3.3.
+  app.post('/api/stock/in', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        qty: z.number().int().min(1),
+        unitCost: z.number().int().min(0).nullable().default(null),
+        note: z.string().nullable().default(null),
+      })
+      .parse(req.body);
+
+    const product = await prisma.product.findUnique({ where: { id: body.productId } });
+    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+
+    const [updated] = await prisma.$transaction([
+      prisma.product.update({
+        where: { id: body.productId },
+        data: {
+          stockQty: { increment: body.qty },
+          ...(body.unitCost !== null ? { costPrice: body.unitCost } : {}),
+        },
+      }),
+      prisma.stockMovement.create({
+        data: {
+          productId: body.productId,
+          type: 'IN',
+          qty: body.qty,
+          unitCost: body.unitCost,
+          note: body.note,
+          createdBy: req.user.sub,
+        },
+      }),
+    ]);
+
+    await audit({ userId: req.user.sub, entity: 'Product', entityId: body.productId, action: 'stock-in', newValue: body });
+    return updated;
+  });
+}
+
 function validateTariff(t: z.infer<typeof tariffBody>): string | null {
   if (t.kind === 'PACKAGE') {
     if (t.packagePrice === null || t.packageMinutes === null) {

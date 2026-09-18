@@ -7,8 +7,9 @@ import { env } from './env.ts';
 import { prisma, audit } from './db.ts';
 import { requireAuth, requireManager, verifyPin, type TokenPayload } from './auth.ts';
 import { BusinessError } from './errors.ts';
-import { settingsRoutes } from './routes/settings.ts';
+import { catalogRoutes, settingsRoutes } from './routes/settings.ts';
 import { sessionRoutes } from './routes/sessions.ts';
+import { shiftRoutes } from './routes/shifts.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -82,7 +83,9 @@ app.get('/api/audit', { onRequest: requireAuth }, async (req, reply) => {
 });
 
 await app.register(settingsRoutes);
+await app.register(catalogRoutes);
 await app.register(sessionRoutes);
+await app.register(shiftRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
