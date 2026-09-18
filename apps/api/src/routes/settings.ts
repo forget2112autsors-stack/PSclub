@@ -6,6 +6,18 @@ import { requireAuth, requireManager } from '../auth.ts';
 
 const idParam = z.object({ id: z.string().min(1) });
 
+/**
+ * Qisman yangilash uchun: zod ning .partial() sxemasi .default() qiymatlarni
+ * baribir qo'shib yuboradi, natijada yuborilmagan maydonlar standart qiymatga
+ * tushib qoladi (narx 0 bo'lib ketishi mumkin). Shuning uchun so'rov tanasida
+ * haqiqatan kelgan kalitlarnigina olamiz.
+ */
+function onlySent<T extends object>(raw: unknown, parsed: T): Partial<T> {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const sent = new Set(Object.keys(raw));
+  return Object.fromEntries(Object.entries(parsed).filter(([key]) => sent.has(key))) as Partial<T>;
+}
+
 const scheduleSchema = z.object({
   daysOfWeek: z.array(z.number().int().min(0).max(6)).default([]),
   startMinute: z.number().int().min(0).max(1439),
@@ -63,7 +75,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/station-types/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
-    const body = stationTypeBody.partial().parse(req.body);
+    const body = onlySent(req.body, stationTypeBody.partial().parse(req.body));
 
     const before = await prisma.stationType.findUnique({ where: { id } });
     if (!before) return reply.code(404).send({ error: 'Joy turi topilmadi.' });
@@ -116,10 +128,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/stations/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
-    const body = stationBody.partial().extend({
+    const schema = stationBody.partial().extend({
       status: z.enum(['FREE', 'BUSY', 'OUT_OF_SERVICE']).optional(),
       note: z.string().nullable().optional(),
-    }).parse(req.body);
+    });
+    const body = onlySent(req.body, schema.parse(req.body));
 
     const before = await prisma.station.findUnique({ where: { id } });
     if (!before) return reply.code(404).send({ error: 'Joy topilmadi.' });
@@ -181,7 +194,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/tariffs/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
-    const body = tariffBody.partial().parse(req.body);
+    const body = onlySent(req.body, tariffBody.partial().parse(req.body));
 
     const before = await prisma.tariff.findUnique({ where: { id }, include: { schedules: true } });
     if (!before) return reply.code(404).send({ error: 'Tarif topilmadi.' });
@@ -265,7 +278,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/products/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
-    const body = productBody.partial().extend({ isActive: z.boolean().optional() }).parse(req.body);
+    const body = onlySent(req.body, productBody.partial().extend({ isActive: z.boolean().optional() }).parse(req.body));
 
     const before = await prisma.product.findUnique({ where: { id } });
     if (!before) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });

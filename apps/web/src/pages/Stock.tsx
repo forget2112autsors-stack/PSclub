@@ -29,6 +29,7 @@ export function Stock() {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [incoming, setIncoming] = useState<Product | null>(null);
+  const [editing, setEditing] = useState<Product | null>(null);
 
   const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
   const categories = useQuery({
@@ -100,13 +101,22 @@ export function Stock() {
                 </td>
                 <td className="py-2 text-right">
                   {isManager(user) && (
-                    <button
-                      type="button"
-                      onClick={() => setIncoming(p)}
-                      className="text-sm text-emerald-400 hover:text-emerald-300"
-                    >
-                      kirim
-                    </button>
+                    <span className="flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setIncoming(p)}
+                        className="text-sm text-emerald-400 hover:text-emerald-300"
+                      >
+                        kirim
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(p)}
+                        className="text-sm text-slate-400 hover:text-slate-200"
+                      >
+                        tahrirlash
+                      </button>
+                    </span>
                   )}
                 </td>
               </tr>
@@ -127,7 +137,138 @@ export function Stock() {
       {incoming && (
         <StockIn product={incoming} onClose={() => setIncoming(null)} onDone={refresh} onError={onError} />
       )}
+      {editing && (
+        <EditProduct product={editing} onClose={() => setEditing(null)} onDone={refresh} onError={onError} />
+      )}
     </div>
+  );
+}
+
+function EditProduct({
+  product,
+  onClose,
+  onDone,
+  onError,
+}: {
+  product: Product;
+  onClose: () => void;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [form, setForm] = useState({
+    name: product.name,
+    costPrice: String(product.costPrice),
+    salePrice: String(product.salePrice),
+    minStock: String(product.minStock),
+    isQuickKey: product.isQuickKey,
+  });
+  const [confirmed, setConfirmed] = useState(false);
+
+  const patch = (body: Record<string, unknown>) =>
+    api(`/api/products/${product.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+  const save = useMutation({
+    mutationFn: () =>
+      patch({
+        name: form.name.trim(),
+        costPrice: Number(form.costPrice) || 0,
+        salePrice: Number(form.salePrice) || 0,
+        minStock: Number(form.minStock) || 0,
+        isQuickKey: form.isQuickKey,
+      }),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
+  const hide = useMutation({
+    mutationFn: () => patch({ isActive: false }),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title={product.name} onClose={onClose}>
+      <div className="space-y-3">
+        <Field label="Nomi">
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Tannarx">
+            <input
+              value={form.costPrice}
+              onChange={(e) => setForm({ ...form, costPrice: e.target.value.replace(/\D/g, '') })}
+              inputMode="numeric"
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Sotuv narxi">
+            <input
+              value={form.salePrice}
+              onChange={(e) => setForm({ ...form, salePrice: e.target.value.replace(/\D/g, '') })}
+              inputMode="numeric"
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Ogohlantirish chegarasi">
+          <input
+            value={form.minStock}
+            onChange={(e) => setForm({ ...form, minStock: e.target.value.replace(/\D/g, '') })}
+            inputMode="numeric"
+            className={inputClass}
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.isQuickKey}
+            onChange={(e) => setForm({ ...form, isQuickKey: e.target.checked })}
+          />
+          Tez tugmalarda ko'rsatilsin
+        </label>
+
+        <p className="text-xs text-slate-500">
+          Qoldiq: {product.stockQty}. Uni faqat kirim orqali o'zgartirish mumkin — shunda ombor tarixi
+          buzilmaydi.
+        </p>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={hide.isPending}
+            onClick={() => (confirmed ? hide.mutate() : setConfirmed(true))}
+            className={`tap rounded-lg px-4 py-3 text-sm transition ${
+              confirmed ? 'bg-red-700 hover:bg-red-600' : 'bg-slate-800 text-red-400 hover:bg-slate-700'
+            }`}
+          >
+            {confirmed ? 'Aniqmi? Bosing' : 'Ro\'yxatdan olib tashlash'}
+          </button>
+          <button
+            type="button"
+            disabled={!form.name.trim() || save.isPending}
+            onClick={() => save.mutate()}
+            className="tap flex-1 rounded-lg bg-emerald-600 py-3 font-medium transition hover:bg-emerald-500 disabled:opacity-40"
+          >
+            Saqlash
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500">
+          Mahsulot butunlay o'chirilmaydi — eski sotuvlar unga bog'langan. U shunchaki ro'yxatdan
+          yashiriladi.
+        </p>
+      </div>
+    </Modal>
   );
 }
 

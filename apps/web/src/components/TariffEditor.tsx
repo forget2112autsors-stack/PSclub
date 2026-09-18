@@ -50,6 +50,8 @@ interface Props {
 export function TariffEditor({ tariff, stationTypes, onClose }: Props) {
   const client = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  // Arxivlash ikki bosishda — tasodifan bosilib ketmasligi uchun.
+  const [confirmed, setConfirmed] = useState(false);
 
   const [form, setForm] = useState({
     name: tariff?.name ?? '',
@@ -71,6 +73,15 @@ export function TariffEditor({ tariff, stationTypes, onClose }: Props) {
   const [schedules, setSchedules] = useState<TariffSchedule[]>(
     tariff?.schedules.length ? tariff.schedules : [{ daysOfWeek: [], startMinute: 9 * 60, endMinute: 22 * 60 }],
   );
+
+  const archive = useMutation({
+    mutationFn: () => api(`/api/tariffs/${tariff?.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['tariffs'] });
+      onClose();
+    },
+    onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik.'),
+  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -337,14 +348,40 @@ export function TariffEditor({ tariff, stationTypes, onClose }: Props) {
           </p>
         )}
 
-        <button
-          type="button"
-          disabled={!form.name.trim() || save.isPending}
-          onClick={() => save.mutate()}
-          className="tap w-full rounded-lg bg-emerald-600 py-3 font-medium transition hover:bg-emerald-500 disabled:opacity-40"
-        >
-          {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-        </button>
+        <div className="flex gap-2">
+          {tariff && (
+            <button
+              type="button"
+              disabled={archive.isPending}
+              onClick={() => {
+                if (confirmed) archive.mutate();
+                else setConfirmed(true);
+              }}
+              className={`tap rounded-lg px-4 py-3 text-sm transition ${
+                confirmed
+                  ? 'bg-red-700 hover:bg-red-600'
+                  : 'bg-slate-800 text-red-400 hover:bg-slate-700'
+              }`}
+            >
+              {confirmed ? 'Aniqmi? Bosing' : 'Arxivlash'}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!form.name.trim() || save.isPending}
+            onClick={() => save.mutate()}
+            className="tap flex-1 rounded-lg bg-emerald-600 py-3 font-medium transition hover:bg-emerald-500 disabled:opacity-40"
+          >
+            {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+          </button>
+        </div>
+
+        {tariff && (
+          <p className="text-xs text-slate-500">
+            Arxivlangan tarif o'chirilmaydi — eski seanslar unga bog'langan bo'lishi mumkin. U shunchaki
+            yangi seanslarda ishlatilmaydi.
+          </p>
+        )}
       </div>
     </Modal>
   );
