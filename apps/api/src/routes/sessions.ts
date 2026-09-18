@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { prisma } from '../db.ts';
+import { broadcast } from '../realtime.ts';
 import { fail } from '../errors.ts';
 import { requireAuth, requireManager } from '../auth.ts';
 import {
@@ -45,6 +46,12 @@ async function currentShift(clubId: string) {
 
 export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAuth);
+
+  // Har bir muvaffaqiyatli o'zgartirishdan keyin ochiq interfeyslar yangilanadi.
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'GET' || reply.statusCode >= 400) return;
+    broadcast();
+  });
 
   app.get('/api/map', async (req) => ({
     stations: await listStations(req.user.clubId),

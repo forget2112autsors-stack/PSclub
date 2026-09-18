@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { Shell } from './components/Shell.tsx';
 import { Login } from './pages/Login.tsx';
+import { StationMap } from './pages/Map.tsx';
 import { Placeholder } from './pages/Placeholder.tsx';
 import { Settings } from './pages/Settings.tsx';
 import { useAuth } from './store/auth.ts';
@@ -34,7 +35,7 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Shell />}>
-            <Route index element={<Placeholder title="Joylar xaritasi" phase="2-bosqich (2.1)" />} />
+            <Route index element={<StationMap />} />
             <Route path="kassa" element={<Placeholder title="Tez kassa" phase="2-bosqich (2.5)" />} />
             <Route path="smena" element={<Placeholder title="Smena" phase="2-bosqich (2.7)" />} />
             <Route path="mijozlar" element={<Placeholder title="Mijozlar" phase="5-bosqich" />} />

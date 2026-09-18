@@ -10,6 +10,7 @@ import { BusinessError } from './errors.ts';
 import { catalogRoutes, settingsRoutes } from './routes/settings.ts';
 import { sessionRoutes } from './routes/sessions.ts';
 import { shiftRoutes } from './routes/shifts.ts';
+import { initRealtime } from './realtime.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -19,6 +20,20 @@ const app = Fastify({
 
 await app.register(cors, { origin: true, credentials: true });
 await app.register(jwt, { secret: env.JWT_SECRET, sign: { expiresIn: SESSION_TTL } });
+
+// Standart parser tanasi bo'sh POST so'rovni rad etadi. Bizda esa tanasiz
+// amallar bor (pauzadan davom ettirish) — bo'sh tanani {} deb qabul qilamiz.
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  const raw = String(body ?? '').trim();
+  if (raw === '') return done(null, {});
+  try {
+    done(null, JSON.parse(raw));
+  } catch {
+    const err = new Error('JSON noto\'g\'ri formatda.') as Error & { statusCode?: number };
+    err.statusCode = 400;
+    done(err, undefined);
+  }
+});
 
 app.setErrorHandler((err, _req, reply) => {
   if (err instanceof BusinessError) return reply.code(400).send({ error: err.message });
@@ -89,6 +104,7 @@ await app.register(shiftRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
+  initRealtime(app.server);
   app.log.info(`PS Klub API: http://localhost:${env.PORT}`);
 } catch (err) {
   app.log.error(err);

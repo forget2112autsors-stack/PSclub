@@ -528,7 +528,7 @@ export async function listStations(clubId: string) {
     };
     if (!session) return { ...base, session: null };
 
-    const { totals } = computeSession(session as SessionRow, ctx, now);
+    const { calc, totals } = computeSession(session as SessionRow, ctx, now);
     return {
       ...base,
       session: {
@@ -537,6 +537,11 @@ export async function listStations(clubId: string) {
         paused: session.status === 'PAUSED',
         gamepads: session.gamepads,
         customer: session.customer?.fullName ?? null,
+        tariffName: calc.segments.at(-1)?.tariffName ?? null,
+        // Taymer brauzerda shu qiymatdan davom etadi — summa esa serverdan.
+        activeMinutes: Math.round(calc.activeMinutes),
+        prepaidMinutes: session.prepaidMinutes,
+        paymentMode: session.paymentMode,
         totalAmount: totals.totalAmount,
         debt: totals.debt,
         creditExceeded: totals.creditExceeded,

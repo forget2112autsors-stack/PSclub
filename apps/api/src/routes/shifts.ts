@@ -2,11 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { fail } from '../errors.ts';
+import { broadcast } from '../realtime.ts';
 import { requireAuth } from '../auth.ts';
 import { addExpense, closeShift, currentShift, openShift, shiftSummary } from '../services/shift.ts';
 
 export async function shiftRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAuth);
+
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'GET' || reply.statusCode >= 400) return;
+    broadcast();
+  });
 
   app.get('/api/shifts/current', async (req) => {
     const shift = await currentShift(req.user.clubId);
