@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { api, ApiError } from '../lib/api.ts';
+import { TariffEditor, type Tariff } from '../components/TariffEditor.tsx';
 
 interface StationType {
   id: string;
@@ -18,16 +19,10 @@ interface Station {
   type: { id: string; name: string };
 }
 
-interface Tariff {
-  id: string;
-  name: string;
-  kind: 'HOURLY' | 'PACKAGE';
-  pricePerHour: number;
-  packagePrice: number | null;
-  minMinutes: number;
-}
-
 const summa = (value: number) => `${value.toLocaleString('uz-UZ')} so'm`;
+
+const toTime = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 export function Settings() {
   const client = useQueryClient();
@@ -37,6 +32,7 @@ export function Settings() {
   const stations = useQuery({ queryKey: ['stations'], queryFn: () => api<Station[]>('/api/stations') });
   const tariffs = useQuery({ queryKey: ['tariffs'], queryFn: () => api<Tariff[]>('/api/tariffs?all=1') });
 
+  const [editing, setEditing] = useState<{ tariff: Tariff | null } | null>(null);
   const [typeName, setTypeName] = useState('');
   const [stationNumber, setStationNumber] = useState('');
   const [stationTypeId, setStationTypeId] = useState('');
@@ -186,25 +182,59 @@ export function Settings() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Tariflar</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-slate-300">Tariflar</h2>
+          <button
+            type="button"
+            onClick={() => setEditing({ tariff: null })}
+            className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm transition hover:bg-emerald-500"
+          >
+            Tarif qo'shish
+          </button>
+        </div>
+
         <ul className="space-y-2">
           {tariffs.data?.map((tariff) => (
-            <li key={tariff.id} className="flex items-center justify-between rounded-lg bg-slate-900 px-4 py-3 text-sm">
-              <span>{tariff.name}</span>
-              <span className="text-slate-400">
-                {tariff.kind === 'PACKAGE'
-                  ? summa(tariff.packagePrice ?? 0)
-                  : `${summa(tariff.pricePerHour)} / soat`}
-              </span>
+            <li key={tariff.id}>
+              <button
+                type="button"
+                onClick={() => setEditing({ tariff })}
+                className="tap w-full rounded-lg bg-slate-900 px-4 py-3 text-left text-sm transition hover:bg-slate-800"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span>{tariff.name}</span>
+                  <span className="text-slate-400">
+                    {tariff.kind === 'PACKAGE'
+                      ? summa(tariff.packagePrice ?? 0)
+                      : `${summa(tariff.pricePerHour)} / soat`}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {tariff.schedules.length === 0
+                    ? 'vaqt oralig\'i yo\'q — hech qachon qo\'llanmaydi'
+                    : tariff.schedules
+                        .map((s) => `${toTime(s.startMinute)}–${toTime(s.endMinute)}`)
+                        .join(', ')}
+                  {tariff.kind === 'HOURLY' && tariff.minMinutes > 0 && ` · min ${tariff.minMinutes} daq`}
+                </div>
+              </button>
             </li>
           ))}
           {tariffs.data?.length === 0 && (
             <li className="text-sm text-slate-500">
-              Hali kiritilmagan — TZ 12-bo'limidagi 1-savolga javob kelgach to'ldiriladi.
+              Hali kiritilmagan. Klubdagi haqiqiy narxlarni "Tarif qo'shish" orqali kiriting.
             </li>
           )}
         </ul>
       </section>
+
+      {editing && (
+        <TariffEditor
+          tariff={editing.tariff}
+          stationTypes={types.data ?? []}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }
