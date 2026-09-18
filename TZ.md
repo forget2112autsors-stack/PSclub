@@ -14,6 +14,32 @@
 
 ---
 
+## BAJARILGAN ISHLAR HOLATI — 2026-09-18
+
+Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
+**✗** boshlanmagan.
+
+| Modul | Holat | Nima qolgan |
+|---|---|---|
+| M1 Joylar xaritasi va seans | ◐ | Seansni **bo'lish (split)** yo'q; smena yopishda **umumiy pult sverkasi** yo'q |
+| M2 Tariflar | ✓ | — |
+| M3 Bufet va ombor | ◐ | **Inventarizatsiya (sanoq)** yo'q; shtrix-kod ishlatilmaydi |
+| M4 Kassa, to'lov, smena | ◐ | Limit oshganda **administrator ruxsati bilan ochish** yo'q; Click/Payme (2-bosqich) |
+| M5 Mijozlar | ✗ | Butun modul — baza tayyor, interfeys yo'q (5-bosqich) |
+| M6 Hisobot va analitika | ◐ | Kunlik hisobot va Excel ✓. **Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash, PDF** yo'q |
+| M7 Telegram bot | ✗ | Butun modul (4 va 5-bosqich) |
+| M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. **Avtomatik backup sozlanmagan**, rus tili yo'q |
+| PWA / offline kesh | ✗ | 4-bosqichda (2.3-bo'limdagi majburiy chora) |
+
+**Qabul mezonlari:** 9 ta bajarildi (QM-1…QM-6, QM-8, QM-9, QM-11),
+QM-7 qisman, QM-10 va QM-12 qolgan. Batafsil 10-bo'limda.
+
+**Eng muhim to'siq:** klubda sinovni (3-bosqich) boshlash uchun haqiqiy
+mahsulot ro'yxati va tasdiqlangan tariflar kerak. Hozir PS-3 tunda va VIP
+narxlari — taxminiy qiymatlar.
+
+---
+
 ## 1. Loyiha haqida
 
 ### 1.1. Hozirgi holat
@@ -513,19 +539,22 @@ narsa ham yo'q.)*
 
 ## 10. Qabul mezonlari (Acceptance Criteria)
 
-1-versiya qabul qilinadi, agar quyidagi ssenariylar to'liq ishlasa:
+1-versiya qabul qilinadi, agar quyidagi ssenariylar to'liq ishlasa.
 
-- [ ] **QM-1.** Operator smena ochadi, boshlang'ich naqd summa kiritiladi
-- [ ] **QM-2.** 9-joyga PS-3 tarifida, ishdan keyin to'lov rejimida seans ochiladi; xaritada yashil bo'lib vaqt sanay boshlaydi
-- [ ] **QM-3.** Shu seansga 3 ta bufet mahsuloti qo'shiladi; summa seansga to'g'ri qo'shiladi, ombor qoldig'i kamayadi
-- [ ] **QM-4.** Ishonch limiti oshganda tizim bloklaydi va ogohlantiradi
-- [ ] **QM-5.** Seans yopiladi, yakuniy hisob (o'yin + bufet) to'g'ri chiqadi, aralash to'lov (naqd + balans) qabul qilinadi
-- [ ] **QM-6.** Tarif chegarasini kesib o'tgan seans (masalan 21:00–23:30, tunda tarif o'zgaradi) to'g'ri hisoblanadi
-- [ ] **QM-7.** *(v1.1 da o'zgartirildi — eski matn: «internet uzilgan holatda barcha amallar ishlaydi».)* Internet uzilganda tizim buni ≤ 10 soniyada aniqlaydi va operatorga aniq xabar ko'rsatadi; yarim bajarilgan yozuv qolmaydi; aloqa tiklangach interfeys o'zi qayta ulanadi va holat to'g'ri ko'rinadi
-- [ ] **QM-8.** Smena yopiladi, kassa farqi to'g'ri hisoblanadi, izohsiz yopib bo'lmaydi
-- [ ] **QM-9.** Kunlik hisobot Excel ga chiqadi va qo'lda hisoblangan summa bilan to'liq mos keladi
+**Holat 2026-09-18:** `[x]` — jonli bazada tekshirilgan · `[~]` — qisman ·
+`[ ]` — bajarilmagan. 9 tasi bajarildi, 1 tasi qisman, 2 tasi qoldi.
+
+- [x] **QM-1.** Operator smena ochadi, boshlang'ich naqd summa kiritiladi
+- [x] **QM-2.** 9-joyga PS-3 tarifida, ishdan keyin to'lov rejimida seans ochiladi; xaritada yashil bo'lib vaqt sanay boshlaydi
+- [x] **QM-3.** Shu seansga 3 ta bufet mahsuloti qo'shiladi; summa seansga to'g'ri qo'shiladi, ombor qoldig'i kamayadi
+- [x] **QM-4.** Ishonch limiti oshganda tizim bloklaydi va ogohlantiradi
+- [x] **QM-5.** Seans yopiladi, yakuniy hisob (o'yin + bufet) to'g'ri chiqadi, aralash to'lov (naqd + balans) qabul qilinadi
+- [x] **QM-6.** Tarif chegarasini kesib o'tgan seans (masalan 21:00–23:30, tunda tarif o'zgaradi) to'g'ri hisoblanadi
+- [~] **QM-7.** *(v1.1 da o'zgartirildi — eski matn: «internet uzilgan holatda barcha amallar ishlaydi».)* Internet uzilganda tizim buni ≤ 10 soniyada aniqlaydi va operatorga aniq xabar ko'rsatadi; yarim bajarilgan yozuv qolmaydi; aloqa tiklangach interfeys o'zi qayta ulanadi va holat to'g'ri ko'rinadi
+- [x] **QM-8.** Smena yopiladi, kassa farqi to'g'ri hisoblanadi, izohsiz yopib bo'lmaydi
+- [x] **QM-9.** Kunlik hisobot Excel ga chiqadi va qo'lda hisoblangan summa bilan to'liq mos keladi
 - [ ] **QM-10.** Egasi Telegramda kunlik xulosani avtomatik oladi
-- [ ] **QM-11.** Operator o'chirgan/tuzatgan har bir yozuv audit jurnalida ko'rinadi
+- [x] **QM-11.** Operator o'chirgan/tuzatgan har bir yozuv audit jurnalida ko'rinadi
 - [ ] **QM-12.** Bir hafta GameClass3 bilan **parallel** ishlanganda ikkala tizim daromadi bir xil chiqadi (±1 %)
 
 ---
@@ -610,23 +639,23 @@ Kategoriya, nom, tannarx, sotuv narxi, boshlang'ich qoldiq.
 
 ---
 
-## 0-bosqich — Tayyorgarlik
+## 0-bosqich — Tayyorgarlik  ◐ QISMAN
 **Muddat: 3–5 kun | Natija: aniqlik**
 
-| № | Ish | Natija |
+| № | Ish | Holat |
 |---|---|---|
-| 0.1 | «Ochiq savollar» bo'limiga javob | To'ldirilgan TZ v1.1 |
-| 0.2 | Tarif jadvalini yozib chiqish | Excel: barcha tariflar, narx, vaqt |
-| 0.3 | Bufet mahsulotlari ro'yxati | Excel: nom, kategoriya, narxlar |
-| 0.4 | Hozirgi jarayonni kuzatish | Bir smena yonida turib yozib olish |
-| 0.5 | VPS va domen olish | Server tayyor |
-| 0.6 | 4G zaxira modem masalasini hal qilish (2.3-bo'lim) | Internet ikki kanalli |
+| 0.1 | «Ochiq savollar» bo'limiga javob | ✓ 5 tasi yopildi, 1 tasi (mahsulotlar) ochiq |
+| 0.2 | Tarif jadvalini yozib chiqish | ◐ kiritildi, lekin PS-3 tunda va VIP narxlari **taxminiy** |
+| 0.3 | Bufet mahsulotlari ro'yxati | ✗ faqat 2 ta sinov mahsuloti bor |
+| 0.4 | Hozirgi jarayonni kuzatish | ✗ |
+| 0.5 | VPS va domen olish | ◐ baza Supabase'da ishlayapti; API hali lokal |
+| 0.6 | 4G zaxira modem masalasini hal qilish (2.3-bo'lim) | ✗ |
 
 **Nazorat nuqtasi:** TZ tasdiqlangan, boshlang'ich ma'lumot tayyor.
 
 ---
 
-## 1-bosqich — Poydevor
+## 1-bosqich — Poydevor  ✓ BAJARILDI
 **Muddat: 2 hafta | Natija: bo'sh, lekin ishlaydigan skelet**
 
 | № | Ish |
@@ -642,7 +671,7 @@ Kategoriya, nom, tannarx, sotuv narxi, boshlang'ich qoldiq.
 
 ---
 
-## 2-bosqich — MVP yadro ⭐
+## 2-bosqich — MVP yadro ⭐  ✓ BAJARILDI
 **Muddat: 3 hafta | Natija: klubda ishlatsa bo'ladigan versiya**
 
 | № | Ish | Modul |
@@ -664,7 +693,7 @@ Kategoriya, nom, tannarx, sotuv narxi, boshlang'ich qoldiq.
 
 ---
 
-## 3-bosqich — Klubda sinov (parallel ishlash) ⭐
+## 3-bosqich — Klubda sinov (parallel ishlash) ⭐  ✗ BOSHLANMAGAN
 **Muddat: 2 hafta | Natija: haqiqiy sharoitda tekshirilgan tizim**
 
 | № | Ish |
@@ -682,7 +711,7 @@ Kategoriya, nom, tannarx, sotuv narxi, boshlang'ich qoldiq.
 
 ---
 
-## 4-bosqich — Egasi paneli va Telegram
+## 4-bosqich — Egasi paneli va Telegram  ✗ BOSHLANMAGAN
 **Muddat: 1 hafta | Natija: egasi uzoqdan ko'radi**
 
 *(v1.1: VPS va HTTPS 1-bosqichga ko'chdi, sinxronizatsiya va Tauri chiqarildi —
@@ -699,7 +728,7 @@ bosqich 2 haftadan 1 haftaga qisqardi.)*
 
 ---
 
-## 5-bosqich — Mijozlar va to'lovlar
+## 5-bosqich — Mijozlar va to'lovlar  ✗ BOSHLANMAGAN
 **Muddat: 2 hafta | Natija: doimiy mijozlar bilan ishlash**
 
 | № | Ish | Modul |
@@ -713,7 +742,7 @@ bosqich 2 haftadan 1 haftaga qisqardi.)*
 
 ---
 
-## 6-bosqich — Analitika va o'sish
+## 6-bosqich — Analitika va o'sish  ✗ BOSHLANMAGAN
 **Muddat: 2 hafta | Natija: raqamga asoslangan qarorlar**
 
 | № | Ish | Modul |

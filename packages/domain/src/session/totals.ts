@@ -28,7 +28,10 @@ export interface SessionTotals {
   /** Yangi xizmat (bufet, uzaytirish) qo'shsa bo'ladimi. */
   canAddService: boolean;
   canClose: boolean;
-  blockReason: string | null;
+  /** Nega yangi xizmat qo'shib bo'lmaydi. */
+  addBlockReason: string | null;
+  /** Nega hisobni yopib bo'lmaydi. Bu boshqa sabab — ikkalasi aralashmasin. */
+  closeBlockReason: string | null;
 }
 
 export function itemsAmount(items: OrderLine[]): number {
@@ -55,10 +58,9 @@ export function sessionTotals(input: TotalsInput): SessionTotals {
   const creditLimit = input.creditLimit ?? 0;
   const creditExceeded = creditLimit > 0 && debt >= creditLimit;
 
-  let blockReason: string | null = null;
-  if (creditExceeded) {
-    blockReason = 'Ishonch limiti oshdi — yangi xizmat qo\'shish bloklandi.';
-  }
+  const addBlockReason = creditExceeded
+    ? `Ishonch limiti oshdi (qarz ${debt.toLocaleString('uz-UZ')} so'm, limit ${creditLimit.toLocaleString('uz-UZ')} so'm) — yangi xizmat qo'shish bloklandi.`
+    : null;
 
   // Mehmonning qarzini yozib qo'yadigan karta yo'q — TZ BQ-3.
   const guestOwes = (input.isGuest ?? false) && debt > 0;
@@ -75,8 +77,9 @@ export function sessionTotals(input: TotalsInput): SessionTotals {
     creditExceeded,
     canAddService: !creditExceeded,
     canClose,
-    blockReason: guestOwes
+    addBlockReason,
+    closeBlockReason: guestOwes
       ? 'Mehmon seansini qarz bilan yopib bo\'lmaydi — to\'lovni oling yoki mijozni kartaga bog\'lang.'
-      : blockReason,
+      : null,
   };
 }

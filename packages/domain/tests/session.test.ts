@@ -55,7 +55,7 @@ test('QM-4: ishonch limiti oshganda yangi xizmat bloklanadi', () => {
 
   assert.equal(t.creditExceeded, true);
   assert.equal(t.canAddService, false);
-  assert.match(t.blockReason ?? '', /limit/i);
+  assert.match(t.addBlockReason ?? '', /limit/i);
 });
 
 test('limit aynan chegaraga yetganda ham bloklanadi', () => {
@@ -105,7 +105,7 @@ test('BQ-3: mehmon seansini qarz bilan yopib bo\'lmaydi', () => {
 
   assert.equal(t.debt, 30_000);
   assert.equal(t.canClose, false);
-  assert.match(t.blockReason ?? '', /mehmon/i);
+  assert.match(t.closeBlockReason ?? '', /mehmon/i);
 });
 
 test('mehmon to\'liq to\'lasa seans yopiladi', () => {
@@ -117,7 +117,7 @@ test('mehmon to\'liq to\'lasa seans yopiladi', () => {
   });
 
   assert.equal(t.canClose, true);
-  assert.equal(t.blockReason, null);
+  assert.equal(t.closeBlockReason, null);
 });
 
 test('mijozga bog\'langan seans qarz bilan yopiladi — qarz kartaga yoziladi', () => {

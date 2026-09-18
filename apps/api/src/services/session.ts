@@ -245,7 +245,7 @@ export async function addItem(
 
     const ctx = await calcContext(session.station.clubId);
     const { totals } = computeSession(session as SessionRow, ctx);
-    if (!totals.canAddService) fail(totals.blockReason ?? 'Yangi xizmat qo\'shib bo\'lmaydi.');
+    if (!totals.canAddService) fail(totals.addBlockReason ?? 'Yangi xizmat qo\'shib bo\'lmaydi.');
   }
 
   const amount = qty * product.salePrice;
@@ -404,7 +404,7 @@ export async function closeSession(input: CloseInput) {
   });
   const { calc, totals } = computeSession({ ...(fresh as SessionRow), endedAt }, ctx, endedAt);
 
-  if (!totals.canClose) fail(totals.blockReason ?? 'Seansni yopib bo\'lmaydi.');
+  if (!totals.canClose) fail(totals.closeBlockReason ?? 'Seansni yopib bo\'lmaydi.');
 
   await prisma.$transaction(async (tx) => {
     await tx.sessionSegment.deleteMany({ where: { sessionId: session.id } });

@@ -24,7 +24,8 @@ interface Detail {
     debt: number;
     creditExceeded: boolean;
     canAddService: boolean;
-    blockReason: string | null;
+    addBlockReason: string | null;
+    closeBlockReason: string | null;
   };
   warnings: string[];
 }
@@ -130,11 +131,13 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
               {w}
             </p>
           ))}
-          {d.totals.blockReason && (
-            <p role="alert" className="rounded-lg bg-red-950/60 px-4 py-2.5 text-sm text-red-300">
-              {d.totals.blockReason}
-            </p>
-          )}
+          {[d.totals.addBlockReason, d.totals.closeBlockReason]
+            .filter((x): x is string => Boolean(x))
+            .map((reason) => (
+              <p key={reason} role="alert" className="rounded-lg bg-red-950/60 px-4 py-2.5 text-sm text-red-300">
+                {reason}
+              </p>
+            ))}
 
           <section className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
             <div>
