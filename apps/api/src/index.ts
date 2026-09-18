@@ -10,6 +10,7 @@ import { BusinessError } from './errors.ts';
 import { catalogRoutes, settingsRoutes } from './routes/settings.ts';
 import { sessionRoutes } from './routes/sessions.ts';
 import { shiftRoutes } from './routes/shifts.ts';
+import { reportRoutes } from './routes/reports.ts';
 import { initRealtime } from './realtime.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
@@ -88,19 +89,11 @@ app.post('/api/auth/login', async (req, reply) => {
 
 app.get('/api/me', { onRequest: requireAuth }, async (req) => ({ user: req.user }));
 
-app.get('/api/audit', { onRequest: requireAuth }, async (req, reply) => {
-  if (!requireManager(req, reply)) return;
-  return prisma.auditLog.findMany({
-    take: 100,
-    orderBy: { createdAt: 'desc' },
-    include: { user: { select: { fullName: true } } },
-  });
-});
-
 await app.register(settingsRoutes);
 await app.register(catalogRoutes);
 await app.register(sessionRoutes);
 await app.register(shiftRoutes);
+await app.register(reportRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });

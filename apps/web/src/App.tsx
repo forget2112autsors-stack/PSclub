@@ -6,7 +6,9 @@ import { Shell } from './components/Shell.tsx';
 import { Login } from './pages/Login.tsx';
 import { StationMap } from './pages/Map.tsx';
 import { Placeholder } from './pages/Placeholder.tsx';
+import { Reports } from './pages/Reports.tsx';
 import { Settings } from './pages/Settings.tsx';
+import { Shift } from './pages/Shift.tsx';
 import { useAuth } from './store/auth.ts';
 
 const client = new QueryClient({
@@ -37,10 +39,10 @@ export function App() {
           <Route element={<Shell />}>
             <Route index element={<StationMap />} />
             <Route path="kassa" element={<Placeholder title="Tez kassa" phase="2-bosqich (2.5)" />} />
-            <Route path="smena" element={<Placeholder title="Smena" phase="2-bosqich (2.7)" />} />
+            <Route path="smena" element={<Shift />} />
             <Route path="mijozlar" element={<Placeholder title="Mijozlar" phase="5-bosqich" />} />
             <Route path="ombor" element={<Placeholder title="Ombor" phase="2-bosqich (2.6)" />} />
-            <Route path="hisobotlar" element={<Placeholder title="Hisobotlar" phase="2-bosqich (2.10)" />} />
+            <Route path="hisobotlar" element={<Reports />} />
             <Route path="sozlamalar" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
