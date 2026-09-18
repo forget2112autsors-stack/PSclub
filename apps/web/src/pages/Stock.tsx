@@ -30,6 +30,7 @@ export function Stock() {
   const [adding, setAdding] = useState(false);
   const [incoming, setIncoming] = useState<Product | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [counting, setCounting] = useState<Product | null>(null);
 
   const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
   const categories = useQuery({
@@ -111,6 +112,13 @@ export function Stock() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setCounting(p)}
+                        className="text-sm text-sky-400 hover:text-sky-300"
+                      >
+                        sanoq
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setEditing(p)}
                         className="text-sm text-slate-400 hover:text-slate-200"
                       >
@@ -139,6 +147,9 @@ export function Stock() {
       )}
       {editing && (
         <EditProduct product={editing} onClose={() => setEditing(null)} onDone={refresh} onError={onError} />
+      )}
+      {counting && (
+        <CountStock product={counting} onClose={() => setCounting(null)} onDone={refresh} onError={onError} />
       )}
     </div>
   );
@@ -462,6 +473,84 @@ function StockIn({
         >
           Kirim qilish
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Inventarizatsiya — TZ M3.3. Sanoq natijasi va farq qayd qilinadi. */
+function CountStock({
+  product,
+  onClose,
+  onDone,
+  onError,
+}: {
+  product: Product;
+  onClose: () => void;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [counted, setCounted] = useState('');
+  const [note, setNote] = useState('');
+
+  const diff = counted === '' ? null : Number(counted) - product.stockQty;
+
+  const save = useMutation({
+    mutationFn: () =>
+      api('/api/stock/count', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: product.id,
+          countedQty: Number(counted) || 0,
+          note: note.trim() || null,
+        }),
+      }),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title={`Sanoq — ${product.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-400">Tizimdagi qoldiq: {product.stockQty}</p>
+
+        <Field label="Haqiqatda nechta bor (sanang)">
+          <input
+            value={counted}
+            onChange={(e) => setCounted(e.target.value.replace(/\D/g, ''))}
+            inputMode="numeric"
+            className={inputClass}
+          />
+        </Field>
+
+        {diff !== null && diff !== 0 && (
+          <p className={`text-sm ${diff < 0 ? 'text-red-300' : 'text-amber-300'}`}>
+            Farq: {diff > 0 ? '+' : ''}
+            {diff} dona — {diff < 0 ? 'kamomad' : 'ortiqcha'}
+          </p>
+        )}
+        {diff === 0 && <p className="text-sm text-emerald-400">Farq yo'q.</p>}
+
+        <Field label="Izoh (farq sababi)">
+          <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
+        </Field>
+
+        <button
+          type="button"
+          disabled={counted === '' || save.isPending}
+          onClick={() => save.mutate()}
+          className="tap w-full rounded-lg bg-emerald-600 py-3 font-medium transition hover:bg-emerald-500 disabled:opacity-40"
+        >
+          Sanoqni saqlash
+        </button>
+
+        <p className="text-xs text-slate-500">
+          Qoldiq sanoq bo'yicha to'g'rilanadi, farq ombor tarixiga yoziladi. Kamomad audit jurnalida
+          kritik deb belgilanadi.
+        </p>
       </div>
     </Modal>
   );

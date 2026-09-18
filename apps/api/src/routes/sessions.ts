@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { prisma } from '../db.ts';
+import { prisma, audit } from '../db.ts';
 import { broadcast } from '../realtime.ts';
 import { fail } from '../errors.ts';
 import { requireAuth, requireManager } from '../auth.ts';
@@ -17,6 +17,7 @@ import {
   removeItem,
   resumeSession,
   sessionDetail,
+  splitSession,
 } from '../services/session.ts';
 
 const idParam = z.object({ id: z.string().min(1) });
@@ -124,6 +125,35 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       userId: req.user.sub,
       shiftId: shift.id,
     });
+  });
+
+  // Hisobni bo'lish — TZ M1.3. Faqat hisoblab beradi, pul yechmaydi.
+  app.get('/api/sessions/:id/split', async (req) => {
+    const shares = z.coerce.number().int().min(1).max(12).parse((req.query as { shares?: string })?.shares ?? 2);
+    return splitSession(idParam.parse(req.params).id, shares);
+  });
+
+  // Ishonch limitini oshirish — faqat administrator (TZ M4.4).
+  app.patch('/api/sessions/:id/credit-limit', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = z.object({ creditLimit: z.number().int().min(0) }).parse(req.body);
+    const id = idParam.parse(req.params).id;
+
+    const before = await prisma.session.findUnique({ where: { id } });
+    if (!before) fail('Seans topilmadi.');
+    if (before.status === 'CLOSED' || before.status === 'CANCELLED') fail('Seans yopilgan.');
+
+    await prisma.session.update({ where: { id }, data: { creditLimit: body.creditLimit } });
+    await audit({
+      userId: req.user.sub,
+      entity: 'Session',
+      entityId: id,
+      action: 'credit-limit',
+      oldValue: { creditLimit: before.creditLimit },
+      newValue: { creditLimit: body.creditLimit },
+      isCritical: true,
+    });
+    return sessionDetail(id);
   });
 
   // Bekor qilish — faqat administrator (TZ 3-bo'lim).

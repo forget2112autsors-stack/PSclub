@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { itemsAmount, sessionTotals } from '../src/index.ts';
+import { itemsAmount, sessionTotals, splitAmount } from '../src/index.ts';
 
 test('BQ-1: o\'yin va bufet qo\'shiladi, chegirma ayriladi', () => {
   const t = sessionTotals({
@@ -130,4 +130,29 @@ test('mijozga bog\'langan seans qarz bilan yopiladi — qarz kartaga yoziladi', 
 
   assert.equal(t.debt, 50_000);
   assert.equal(t.canClose, true);
+});
+
+// ----------------------------------------------------- M1.3: hisobni bo'lish
+
+test('M1.3: summa teng bo\'linadi', () => {
+  assert.deepEqual(splitAmount(90_000, 3), [30_000, 30_000, 30_000]);
+});
+
+test('M1.3: qoldiq birinchi ulushga qo\'shiladi, yig\'indi saqlanadi', () => {
+  const parts = splitAmount(100_000, 3);
+
+  assert.deepEqual(parts, [33_334, 33_333, 33_333]);
+  assert.equal(parts.reduce((a, b) => a + b, 0), 100_000);
+});
+
+test('M1.3: bitta ulush — hammasi bitta kishiga', () => {
+  assert.deepEqual(splitAmount(45_000, 1), [45_000]);
+});
+
+test('M1.3: nol summa bo\'linsa ham nol qaytadi', () => {
+  assert.deepEqual(splitAmount(0, 4), [0, 0, 0, 0]);
+});
+
+test('M1.3: manfiy summa nolga aylanadi', () => {
+  assert.deepEqual(splitAmount(-5_000, 2), [0, 0]);
 });

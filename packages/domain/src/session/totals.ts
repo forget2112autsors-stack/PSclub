@@ -34,6 +34,21 @@ export interface SessionTotals {
   closeBlockReason: string | null;
 }
 
+/**
+ * Summani teng ulushlarga bo'ladi — TZ M1.3 (bir seansni bir necha mijozga).
+ *
+ * Yaxlitlashdan qolgan so'm birinchi ulushga qo'shiladi: shunda ulushlar
+ * yig'indisi hamisha jami summaga teng chiqadi va kassada farq qolmaydi.
+ */
+export function splitAmount(total: number, shares: number): number[] {
+  if (!Number.isInteger(shares) || shares < 1) return [Math.max(0, total)];
+  const safe = Math.max(0, Math.round(total));
+  const base = Math.floor(safe / shares);
+  const parts = new Array<number>(shares).fill(base);
+  parts[0] += safe - base * shares;
+  return parts;
+}
+
 export function itemsAmount(items: OrderLine[]): number {
   return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
 }

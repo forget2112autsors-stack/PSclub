@@ -18,6 +18,9 @@ interface Summary {
   openSessions?: number;
   sessions?: number;
   expectedCash?: number;
+  gamepadsMissing?: number;
+  gamepadsUnchecked?: number;
+  gamepadIssues?: { station: number; issued: number; returned: number; missing: number }[];
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -176,6 +179,28 @@ export function Shift() {
         <p className="mt-2 text-xs text-slate-500">
           Karta to'lovi kassaga tushmaydi — sverkada hisobga olinmaydi.
         </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium text-slate-300">Pult sverkasi</h2>
+        {(s.gamepadsMissing ?? 0) > 0 ? (
+          <div className="rounded-lg bg-red-950/60 px-4 py-3 text-sm text-red-300">
+            <p className="font-medium">{s.gamepadsMissing} ta pult qaytarilmagan:</p>
+            <ul className="mt-1 space-y-0.5">
+              {s.gamepadIssues?.map((g) => (
+                <li key={g.station}>
+                  · {g.station}-joy: {g.issued} berilgan, {g.returned} qaytgan
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-slate-400">
+            Hamma pult qaytgan.
+            {(s.gamepadsUnchecked ?? 0) > 0 &&
+              ` Lekin ${s.gamepadsUnchecked} ta seansda pult tekshirilmagan.`}
+          </p>
+        )}
       </section>
 
       <section>

@@ -1,4 +1,4 @@
-import { calculateSession, sessionTotals, type Interval } from '@psklub/domain';
+import { calculateSession, sessionTotals, splitAmount, type Interval } from '@psklub/domain';
 
 import { prisma, audit } from '../db.ts';
 import { fail } from '../errors.ts';
@@ -469,6 +469,33 @@ export async function closeSession(input: CloseInput) {
   });
 
   return { totals, segments: calc.segments, warnings: calc.warnings, pultFarq };
+}
+
+/**
+ * Hisobni bir necha kishiga bo'lish — TZ M1.3.
+ *
+ * Seans bo'linmaydi, faqat to'lov bo'linadi: o'yin va bufet summasi qo'shilib,
+ * berilgan ulushlarga taqsimlanadi. Yaxlitlashdan qolgan tiyin birinchi
+ * ulushga qo'shiladi, shunda yig'indi hamisha jami summaga teng chiqadi.
+ */
+export async function splitSession(sessionId: string, shares: number) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    include: SESSION_WITH_DETAIL,
+  });
+  if (!session) fail('Seans topilmadi.');
+  if (session.status === 'CLOSED' || session.status === 'CANCELLED') fail('Seans yopilgan.');
+
+  const ctx = await calcContext(session.station.clubId);
+  const { totals } = computeSession(session as SessionRow, ctx);
+  const qoldiq = totals.totalAmount - totals.paidAmount;
+
+  return {
+    totalAmount: totals.totalAmount,
+    paidAmount: totals.paidAmount,
+    remaining: qoldiq,
+    shares: splitAmount(Math.max(0, qoldiq), shares),
+  };
 }
 
 export async function cancelSession(sessionId: string, reason: string, userId: string) {

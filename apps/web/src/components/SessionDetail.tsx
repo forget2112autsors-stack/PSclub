@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, ApiError } from '../lib/api.ts';
+import { isManager, useAuth } from '../store/auth.ts';
 import { Field, Modal, inputClass } from './Modal.tsx';
 
 interface Detail {
@@ -12,6 +13,7 @@ interface Detail {
   customer: { id: string; fullName: string; balance: number } | null;
   gamepads: number;
   paymentMode: 'PREPAID' | 'POSTPAID';
+  creditLimit: number;
   items: { id: string; name: string; qty: number; unitPrice: number; amount: number }[];
   payments: { method: string; amount: number }[];
   segments: { tariffName: string; billedMinutes: number; amount: number }[];
@@ -28,6 +30,13 @@ interface Detail {
     closeBlockReason: string | null;
   };
   warnings: string[];
+}
+
+interface Split {
+  totalAmount: number;
+  paidAmount: number;
+  remaining: number;
+  shares: number[];
 }
 
 interface Product {
@@ -47,6 +56,8 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   const [cash, setCash] = useState('');
   const [card, setCard] = useState('');
   const [returned, setReturned] = useState('');
+  const [shares, setShares] = useState(0);
+  const manager = isManager(useAuth((s) => s.user));
 
   const detail = useQuery({
     queryKey: ['session', sessionId],
@@ -55,12 +66,32 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   });
   const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
 
+  const splitQuery = useQuery({
+    queryKey: ['split', sessionId, shares],
+    queryFn: () => api<Split>(`/api/sessions/${sessionId}/split?shares=${shares}`),
+    enabled: shares > 1,
+  });
+  const split = shares > 1 ? splitQuery.data : null;
+
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['session', sessionId] });
     void client.invalidateQueries({ queryKey: ['map'] });
     void client.invalidateQueries({ queryKey: ['products'] });
   };
   const onError = (err: unknown) => setError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik.');
+
+  const raiseLimit = useMutation({
+    mutationFn: () =>
+      api(`/api/sessions/${sessionId}/credit-limit`, {
+        method: 'PATCH',
+        body: JSON.stringify({ creditLimit: (detail.data?.creditLimit ?? 0) + 100_000 }),
+      }),
+    onSuccess: () => {
+      setError(null);
+      refresh();
+    },
+    onError,
+  });
 
   const act = useMutation({
     mutationFn: (path: string) => api(`/api/sessions/${sessionId}/${path}`, { method: 'POST' }),
@@ -229,6 +260,22 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </p>
           )}
 
+          {split && (
+            <section className="rounded-xl bg-slate-950/60 p-4 text-sm">
+              <p className="mb-2 text-xs text-slate-400">
+                Qoldiq {summa(split.remaining)} so'm — {split.shares.length} kishiga
+              </p>
+              <ul className="space-y-1">
+                {split.shares.map((part, i) => (
+                  <li key={i} className="flex justify-between">
+                    <span>{i + 1}-mijoz</span>
+                    <span className="tabular-nums">{summa(part)} so'm</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {d.status !== 'CLOSED' && !closing && (
             <div className="flex flex-wrap gap-2">
               <button
@@ -238,6 +285,31 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
               >
                 {d.status === 'PAUSED' ? 'Davom ettirish' : 'To\'xtatish'}
               </button>
+
+              <label className="tap flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2.5 text-sm">
+                <span className="text-slate-400">Bo'lish:</span>
+                <select
+                  value={shares}
+                  onChange={(e) => setShares(Number(e.target.value))}
+                  className="bg-transparent outline-none"
+                >
+                  {[0, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n} className="bg-slate-900">
+                      {n === 0 ? 'yo\'q' : `${n} kishi`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {manager && d.totals.creditExceeded && (
+                <button
+                  type="button"
+                  onClick={() => raiseLimit.mutate()}
+                  className="tap rounded-lg bg-amber-700 px-4 py-2.5 text-sm transition hover:bg-amber-600"
+                >
+                  Limitni oshirish (+100 000)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

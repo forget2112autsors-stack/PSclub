@@ -326,6 +326,52 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     await audit({ userId: req.user.sub, entity: 'Product', entityId: body.productId, action: 'stock-in', newValue: body });
     return updated;
   });
+
+  // Inventarizatsiya — TZ M3.3. Sanoq natijasi va farq qayd qilinadi.
+  app.post('/api/stock/count', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        countedQty: z.number().int().min(0),
+        note: z.string().nullable().default(null),
+      })
+      .parse(req.body);
+
+    const product = await prisma.product.findUnique({ where: { id: body.productId } });
+    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+
+    const diff = body.countedQty - product.stockQty;
+    if (diff === 0) {
+      return { product, diff: 0, message: 'Sanoq qoldiq bilan mos — o\'zgarish kiritilmadi.' };
+    }
+
+    const [updated] = await prisma.$transaction([
+      prisma.product.update({ where: { id: body.productId }, data: { stockQty: body.countedQty } }),
+      prisma.stockMovement.create({
+        data: {
+          productId: body.productId,
+          type: 'INVENTORY',
+          qty: diff,
+          note: body.note ?? `Sanoq: ${product.stockQty} -> ${body.countedQty}`,
+          createdBy: req.user.sub,
+        },
+      }),
+    ]);
+
+    // Kamomad — pul yo'qotilishi demak, shuning uchun kritik belgilanadi.
+    await audit({
+      userId: req.user.sub,
+      entity: 'Product',
+      entityId: body.productId,
+      action: 'inventory',
+      oldValue: { stockQty: product.stockQty },
+      newValue: { stockQty: body.countedQty, diff, note: body.note },
+      isCritical: diff < 0,
+    });
+
+    return { product: updated, diff };
+  });
 }
 
 function validateTariff(t: z.infer<typeof tariffBody>): string | null {
