@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, type Context } from 'grammy';
 
 import { prisma, audit } from './db.ts';
 import { verifyPin } from './auth.ts';
@@ -125,16 +125,15 @@ export async function startTelegram(token: string | undefined, dailyHour: number
 
     const xodim = await prisma.appUser.findFirst({ where: { telegramChatId: chatId } });
     if (xodim) {
-      await ctx.reply(
-        `Siz ulangansiz: ${xodim.fullName}\n\n/hozir — klub holati\n/hisobot — kechagi kun\n/uzish — ulanishni bekor qilish`,
-      );
+      await ctx.reply(`Siz ulangansiz: ${xodim.fullName}`, { reply_markup: XODIM_PANEL });
       return;
     }
 
     const mijoz = await customerOf(String(ctx.from?.id));
     if (mijoz) {
       await ctx.reply(
-        `Salom, ${mijoz.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
+        `Salom, ${mijoz.fullName}!\nPastdagi tugmalardan foydalaning.`,
+        { reply_markup: MIJOZ_PANEL },
       );
       return;
     }
@@ -175,7 +174,9 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     if (!linked) return ctx.reply('Siz ulanmagansiz.');
 
     await prisma.appUser.update({ where: { id: linked.id }, data: { telegramChatId: null } });
-    await ctx.reply('Ulanish uzildi. Qayta ulanish uchun /start.');
+    await ctx.reply('Ulanish uzildi. Qayta ulanish uchun /start.', {
+      reply_markup: { remove_keyboard: true },
+    });
   });
 
   bot.command('hozir', async (ctx) => {
@@ -190,6 +191,20 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     const club = await prisma.club.findUniqueOrThrow({ where: { id: user.clubId } });
     await ctx.reply(await reportText(user.clubId, clubDate(club.tzOffsetMinutes, 1)), { parse_mode: 'HTML' });
   });
+
+  const holatKorsat = async (ctx: Context) => {
+    const user = await prisma.appUser.findFirst({ where: { telegramChatId: String(ctx.chat?.id) } });
+    if (!user) return void ctx.reply('Avval /start orqali ulaning.');
+    await ctx.reply(await statusText(user.clubId), { parse_mode: 'HTML' });
+  };
+  const hisobotKorsat = async (ctx: Context) => {
+    const user = await prisma.appUser.findFirst({ where: { telegramChatId: String(ctx.chat?.id) } });
+    if (!user) return void ctx.reply('Avval /start orqali ulaning.');
+    const c = await prisma.club.findUniqueOrThrow({ where: { id: user.clubId } });
+    await ctx.reply(await reportText(user.clubId, clubDate(c.tzOffsetMinutes, 1)), { parse_mode: 'HTML' });
+  };
+  bot.hears(XODIM_PANEL.keyboard[0][0].text, holatKorsat);
+  bot.hears(XODIM_PANEL.keyboard[0][1].text, hisobotKorsat);
 
   // Mijoz buyruqlari PIN ishlovchisidan OLDIN turishi shart: quyidagi
   // message:text hamma matnni ushlaydi va zanjirni to'xtatadi.
@@ -233,7 +248,8 @@ export async function startTelegram(token: string | undefined, dailyHour: number
       isCritical: true,
     });
     await ctx.reply(
-      `Ulandi: ${matched.fullName}.\n\n/hozir — shu daqiqadagi holat\n/hisobot — kechagi kun\n/uzish — ulanishni bekor qilish\n\nHar kuni ertalab soat ${dailyHour}:00 da kunlik xulosa keladi.`,
+      `Ulandi: ${matched.fullName}\n\nHar kuni ertalab soat ${dailyHour}:00 da kunlik xulosa keladi.\nUlanishni uzish: /uzish`,
+      { reply_markup: XODIM_PANEL },
     );
   });
 
@@ -291,31 +307,184 @@ function kun(d: Date, tz: number): string {
   return `${KUNLAR[local.getUTCDay()]} ${local.getUTCDate()}.${String(local.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Tugma matnlari. Har bir amal ham buyruq (/joylar), ham tugma orqali
+ * ishlaydi — mijozlar buyruq yozmaydi, tugma bosadi.
+ */
+const TUGMA = {
+  joylar: '🎮 Bo\'sh joylar',
+  bron: '📅 Bron qilish',
+  balans: '💰 Balans',
+  tarix: '📋 Tarix',
+  hozir: '📊 Hozirgi holat',
+  hisobot: '📈 Kechagi hisobot',
+};
+
+export const MIJOZ_PANEL = {
+  keyboard: [
+    [{ text: TUGMA.joylar }, { text: TUGMA.bron }],
+    [{ text: TUGMA.balans }, { text: TUGMA.tarix }],
+  ],
+  resize_keyboard: true,
+};
+
+export const XODIM_PANEL = {
+  keyboard: [[{ text: TUGMA.hozir }, { text: TUGMA.hisobot }]],
+  resize_keyboard: true,
+};
+
+// Ishlovchilar faqat ctx.reply va ctx.from dan foydalanadi — asosiy
+// Context yetarli, buyruq va tugma kontekstlari uchun bir xil ishlaydi.
+type Ctx = Context;
+
+async function bo_shJoylar(ctx: Ctx): Promise<void> {
+  const c = await club();
+  const stations = await listStations(c.id);
+  const held = await heldStationIds(c.id);
+  const bosh = stations.filter((s) => !s.session && s.status === 'FREE' && !held.has(s.id));
+
+  if (bosh.length === 0) {
+    await ctx.reply('Hozir bo\'sh joy yo\'q. Keyinroq urinib ko\'ring yoki bron qiling.');
+    return;
+  }
+
+  const tur = new Map<string, number[]>();
+  for (const s of bosh) {
+    const list = tur.get(s.type) ?? [];
+    list.push(s.number);
+    tur.set(s.type, list);
+  }
+
+  const lines = ['<b>Hozir bo\'sh joylar</b>', ''];
+  for (const [name, raqamlar] of tur) lines.push(`${name}: ${raqamlar.join(', ')}-joy`);
+
+  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+}
+
+async function balansKorsat(ctx: Ctx): Promise<void> {
+  const customer = await customerOf(String(ctx.from?.id));
+  if (!customer) {
+    await ctx.reply('Avval /start orqali ro\'yxatdan o\'ting.');
+    return;
+  }
+
+  const info = await customerSummary(customer.id);
+  const lines = [`<b>${customer.fullName}</b>`, `Balans: ${summa(customer.balance)} so'm`];
+  if (customer.balance < 0) lines.push(`⚠ Qarz: ${summa(-customer.balance)} so'm`);
+  if (customer.bonusPoints > 0) lines.push(`Bonus: ${summa(customer.bonusPoints)}`);
+
+  if (info.packages.length > 0) {
+    lines.push('', '<b>Paketlar</b>');
+    for (const p of info.packages) {
+      lines.push(`${p.name}: ${Math.floor(p.remainingMinutes / 60)} soat ${p.remainingMinutes % 60} daq`);
+    }
+  }
+  lines.push('', `Jami tashrif: ${info.sessionCount} marta`);
+
+  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+}
+
+async function tarixKorsat(ctx: Ctx): Promise<void> {
+  const customer = await customerOf(String(ctx.from?.id));
+  if (!customer) {
+    await ctx.reply('Avval /start orqali ro\'yxatdan o\'ting.');
+    return;
+  }
+
+  const info = await customerSummary(customer.id);
+  if (info.recentSessions.length === 0) {
+    await ctx.reply('Hali seans bo\'lmagan.');
+    return;
+  }
+
+  const c = await club();
+  const lines = ['<b>Oxirgi seanslar</b>', ''];
+  for (const s of info.recentSessions) {
+    lines.push(
+      `${kun(s.endedAt!, c.tzOffsetMinutes)} · ${s.station.number}-joy (${s.station.type.name}) · ${summa(s.totalAmount)} so'm`,
+    );
+  }
+  lines.push('', `Jami sarflangan: ${summa(info.totalSpent)} so'm`);
+
+  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+}
+
+async function bronTanlash(ctx: Ctx): Promise<void> {
+  const customer = await customerOf(String(ctx.from?.id));
+  if (!customer) {
+    await ctx.reply('Avval /start orqali ro\'yxatdan o\'ting.');
+    return;
+  }
+  if (customer.isBlocked) {
+    await ctx.reply('Kechirasiz, sizga bron qilish mumkin emas. Klub bilan bog\'laning.');
+    return;
+  }
+
+  const c = await club();
+  const now = new Date();
+  const taken = await prisma.booking.findMany({
+    where: { station: { clubId: c.id }, status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gte: now } },
+    select: { startsAt: true },
+  });
+
+  const slots = freeSlots({
+    openMinute: 9 * 60,
+    closeMinute: 23 * 60,
+    now,
+    tzOffsetMinutes: c.tzOffsetMinutes,
+    taken: taken.map((t) => t.startsAt),
+  }).slice(0, 8);
+
+  if (slots.length === 0) {
+    await ctx.reply('Bugun uchun bo\'sh vaqt qolmadi.');
+    return;
+  }
+
+  await ctx.reply('Qaysi vaqtga bron qilamiz?', {
+    reply_markup: {
+      inline_keyboard: slots.map((s) => [
+        {
+          text: `${kun(s, c.tzOffsetMinutes)} ${soat(s, c.tzOffsetMinutes)}`,
+          callback_data: `bron:${s.toISOString()}`,
+        },
+      ]),
+    },
+  });
+}
+
 function registerCustomerFlow(instance: Bot): void {
+  // Har bir amal ikki yo'l bilan chaqiriladi: buyruq va tugma.
+  const ulash = (buyruq: string, tugma: string, handler: (ctx: Ctx) => Promise<void>) => {
+    instance.command(buyruq, handler);
+    instance.hears(tugma, handler);
+  };
+
+  ulash('joylar', TUGMA.joylar, bo_shJoylar);
+  ulash('balans', TUGMA.balans, balansKorsat);
+  ulash('tarix', TUGMA.tarix, tarixKorsat);
+  ulash('bron', TUGMA.bron, bronTanlash);
+
   instance.command('mijoz', async (ctx) => {
     const existing = await customerOf(String(ctx.from?.id));
     if (existing) {
-      return ctx.reply(
-        `Salom, ${existing.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
-      );
+      await ctx.reply(`Salom, ${existing.fullName}!`, { reply_markup: MIJOZ_PANEL });
+      return;
     }
-    await ctx.reply(
-      'Ro\'yxatdan o\'tish uchun telefon raqamingizni yuboring.\nPastdagi tugmani bosing — raqam o\'zi yuboriladi.',
-      {
-        reply_markup: {
-          keyboard: [[{ text: '📱 Raqamimni yuborish', request_contact: true }]],
-          resize_keyboard: true,
-          one_time_keyboard: true,
-        },
+    await ctx.reply('Ro\'yxatdan o\'tish uchun telefon raqamingizni yuboring.', {
+      reply_markup: {
+        keyboard: [[{ text: '📱 Raqamimni yuborish', request_contact: true }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
       },
-    );
+    });
   });
 
   instance.on('message:contact', async (ctx) => {
     const contact = ctx.message.contact;
     // Boshqa odamning raqamini yuborishga yo'l qo'ymaymiz.
     if (contact.user_id !== ctx.from.id) {
-      return ctx.reply('Iltimos, o\'z raqamingizni yuboring.');
+      await ctx.reply('Iltimos, o\'z raqamingizni yuboring.');
+      return;
     }
 
     const c = await club();
@@ -323,114 +492,15 @@ function registerCustomerFlow(instance: Bot): void {
     const customer = await findOrCreateByPhone(c.id, contact.phone_number, ism, String(ctx.from.id));
 
     await ctx.reply(
-      `Ro'yxatdan o'tdingiz, ${customer.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
-      { reply_markup: { remove_keyboard: true } },
+      `Ro'yxatdan o'tdingiz, ${customer.fullName}!\nPastdagi tugmalardan foydalaning.`,
+      { reply_markup: MIJOZ_PANEL },
     );
-  });
-
-  instance.command('joylar', async (ctx) => {
-    const c = await club();
-    const stations = await listStations(c.id);
-    const held = await heldStationIds(c.id);
-
-    const bosh = stations.filter(
-      (s) => !s.session && s.status === 'FREE' && !held.has(s.id),
-    );
-
-    if (bosh.length === 0) return ctx.reply('Hozir bo\'sh joy yo\'q. Keyinroq urinib ko\'ring yoki /bron qiling.');
-
-    const tur = new Map<string, number[]>();
-    for (const s of bosh) {
-      const list = tur.get(s.type) ?? [];
-      list.push(s.number);
-      tur.set(s.type, list);
-    }
-
-    const lines = ['<b>Hozir bo\'sh joylar</b>', ''];
-    for (const [name, raqamlar] of tur) lines.push(`${name}: ${raqamlar.join(', ')}-joy`);
-    lines.push('', 'Band qilish: /bron');
-
-    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
-  });
-
-  instance.command('balans', async (ctx) => {
-    const customer = await customerOf(String(ctx.from?.id));
-    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
-
-    const info = await customerSummary(customer.id);
-    const lines = [
-      `<b>${customer.fullName}</b>`,
-      `Balans: ${summa(customer.balance)} so'm`,
-    ];
-    if (customer.balance < 0) lines.push(`⚠ Qarz: ${summa(-customer.balance)} so'm`);
-    if (customer.bonusPoints > 0) lines.push(`Bonus: ${summa(customer.bonusPoints)}`);
-
-    if (info.packages.length > 0) {
-      lines.push('', '<b>Paketlar</b>');
-      for (const p of info.packages) {
-        const qolgan = `${Math.floor(p.remainingMinutes / 60)} soat ${p.remainingMinutes % 60} daq`;
-        lines.push(`${p.name}: ${qolgan}`);
-      }
-    }
-    lines.push('', `Jami tashrif: ${info.sessionCount} marta`);
-
-    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
-  });
-
-  instance.command('tarix', async (ctx) => {
-    const customer = await customerOf(String(ctx.from?.id));
-    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
-
-    const info = await customerSummary(customer.id);
-    if (info.recentSessions.length === 0) return ctx.reply('Hali seans bo\'lmagan.');
-
-    const c = await club();
-    const lines = ['<b>Oxirgi seanslar</b>', ''];
-    for (const s of info.recentSessions) {
-      lines.push(
-        `${kun(s.endedAt!, c.tzOffsetMinutes)} · ${s.station.number}-joy (${s.station.type.name}) · ${summa(s.totalAmount)} so'm`,
-      );
-    }
-    lines.push('', `Jami sarflangan: ${summa(info.totalSpent)} so'm`);
-
-    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
-  });
-
-  instance.command('bron', async (ctx) => {
-    const customer = await customerOf(String(ctx.from?.id));
-    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
-    if (customer.isBlocked) return ctx.reply('Kechirasiz, sizga bron qilish mumkin emas. Klub bilan bog\'laning.');
-
-    const c = await club();
-    const now = new Date();
-    const taken = await prisma.booking.findMany({
-      where: { station: { clubId: c.id }, status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gte: now } },
-      select: { startsAt: true },
-    });
-
-    const slots = freeSlots({
-      openMinute: 9 * 60,
-      closeMinute: 23 * 60,
-      now,
-      tzOffsetMinutes: c.tzOffsetMinutes,
-      taken: taken.map((t) => t.startsAt),
-    }).slice(0, 8);
-
-    if (slots.length === 0) return ctx.reply('Bugun uchun bo\'sh vaqt qolmadi.');
-
-    await ctx.reply('Qaysi vaqtga bron qilamiz?', {
-      reply_markup: {
-        inline_keyboard: slots.map((s) => [
-          { text: `${kun(s, c.tzOffsetMinutes)} ${soat(s, c.tzOffsetMinutes)}`, callback_data: `bron:${s.toISOString()}` },
-        ]),
-      },
-    });
   });
 
   instance.callbackQuery(/^bron:/, async (ctx) => {
     const customer = await customerOf(String(ctx.from.id));
     if (!customer) {
-      await ctx.answerCallbackQuery('Avval /mijoz orqali ro\'yxatdan o\'ting.');
+      await ctx.answerCallbackQuery('Avval ro\'yxatdan o\'ting.');
       return;
     }
 
