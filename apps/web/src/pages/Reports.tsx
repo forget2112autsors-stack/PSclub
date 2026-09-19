@@ -11,7 +11,9 @@ interface Report {
   quickSales: number;
   discounts: number;
   totalRevenue: number;
+  prepayments: number;
   totalPaid: number;
+  cashFlow: number;
   totalExpenses: number;
   net: number;
   sessionCount: number;
@@ -118,10 +120,37 @@ export function Reports() {
           </section>
 
           <p className="text-sm text-slate-400">
-            {r.sessionCount} ta yopilgan seans · jami tushum {summa(r.totalRevenue)} · to'langan{' '}
-            {summa(r.totalPaid)}
+            {r.sessionCount} ta yopilgan seans · jami tushum {summa(r.totalRevenue)}
             {r.discounts > 0 && ` · chegirma ${summa(r.discounts)}`}
           </p>
+
+          <section className="rounded-xl bg-slate-900 p-4 text-sm">
+            <h2 className="mb-2 text-xs text-slate-400">Pul harakati</h2>
+            <ul className="space-y-1">
+              <li className="flex justify-between">
+                <span>Kassaga tushgan (hammasi)</span>
+                <span className="tabular-nums">{summa(r.totalPaid)}</span>
+              </li>
+              {r.prepayments > 0 && (
+                <li className="flex justify-between text-slate-400">
+                  <span>shundan avans (balans, paket)</span>
+                  <span className="tabular-nums">{summa(r.prepayments)}</span>
+                </li>
+              )}
+              <li className="flex justify-between">
+                <span>Chiqim</span>
+                <span className="tabular-nums">−{summa(r.totalExpenses)}</span>
+              </li>
+              <li className="flex justify-between border-t border-slate-800 pt-1 font-medium">
+                <span>Kassa harakati</span>
+                <span className="tabular-nums">{summa(r.cashFlow)}</span>
+              </li>
+            </ul>
+            <p className="mt-2 text-xs text-slate-500">
+              Avans — mijoz balansiga solgan pul. U hali ishlab topilmagan, shuning uchun sof
+              natijaga kirmaydi: mijoz o'ynaganda daromad sifatida hisoblanadi.
+            </p>
+          </section>
 
           <section>
             <h2 className="mb-2 text-sm font-medium text-slate-300">To'lov turlari</h2>

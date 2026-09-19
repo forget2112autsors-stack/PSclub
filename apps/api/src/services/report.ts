@@ -77,6 +77,16 @@ export async function dailyReport(clubId: string, date: string) {
   const totalPaid = payments.reduce((s, p) => s + (p._sum.amount ?? 0), 0);
   const totalExpenses = expenses.reduce((s, e) => s + (e._sum.amount ?? 0), 0);
 
+  // Avans — balans to'ldirish va paket sotuvi. Pul kelgan, lekin mijoz hali
+  // hech narsa iste'mol qilmagan, ya'ni bu daromad emas, oldindan to'lov.
+  // Seansga bog'lanmagan, lekin mijozga bog'langan to'lov shunday bo'ladi.
+  const prepaid = await prisma.payment.aggregate({
+    where: { createdAt: range, shift: { clubId }, sessionId: null, customerId: { not: null } },
+    _sum: { amount: true },
+  });
+  const prepayments = prepaid._sum.amount ?? 0;
+  const totalRevenue = Math.max(0, gameRevenue + itemsRevenue + quickSales - discounts);
+
   // Soatlik taqsimot — qaysi soatlarda pul kelmayapti (TZ M6.2).
   const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, sessions: 0 }));
   for (const session of sessions) {
@@ -118,10 +128,16 @@ export async function dailyReport(clubId: string, date: string) {
     itemsRevenue,
     quickSales,
     discounts,
-    totalRevenue: Math.max(0, gameRevenue + itemsRevenue + quickSales - discounts),
+    totalRevenue,
+    prepayments,
     totalPaid,
     totalExpenses,
-    net: totalPaid - totalExpenses,
+    // Sof natija — ishlab topilgan pul, ya'ni daromaddan chiqim ayrilgani.
+    // Avansni bu yerga qo'shib bo'lmaydi: mijoz balansiga solgan pul hali
+    // ishlab topilmagan va u o'ynaganda ikkinchi marta sanalib ketardi.
+    net: totalRevenue - totalExpenses,
+    // Kassa harakati — bugun jismonan qancha pul kirib-chiqqani.
+    cashFlow: totalPaid - totalExpenses,
     sessionCount: sessions.length,
     byMethod,
     expenses: expenses.map((e) => ({ category: e.category, amount: e._sum.amount ?? 0 })),

@@ -78,7 +78,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     for (const e of r.expenses) line(e.category, e.amount);
     line('Jami chiqim', r.totalExpenses);
     sheet.addRow([]);
-    line('Sof natija', r.net);
+    line('Sof natija (daromad - chiqim)', r.net);
+    if (r.prepayments > 0) line('Avans (balansga, daromad emas)', r.prepayments);
+    line('Kassa harakati', r.cashFlow);
     sheet.addRow([]);
 
     section('Joy turlari');

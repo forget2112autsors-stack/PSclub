@@ -97,6 +97,7 @@ async function reportText(clubId: string, date: string): Promise<string> {
     `Jami:    ${summa(r.totalRevenue)} so'm`,
     `Chiqim:  ${summa(r.totalExpenses)} so'm`,
     `<b>Sof:     ${summa(r.net)} so'm</b>`,
+    ...(r.prepayments > 0 ? [`Avans:   ${summa(r.prepayments)} so'm (balansga, daromad emas)`] : []),
     '',
     `Seanslar: ${r.sessionCount} ta`,
     ...r.shifts
