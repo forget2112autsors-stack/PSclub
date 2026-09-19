@@ -4,9 +4,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { Shell } from './components/Shell.tsx';
 import { Audit } from './pages/Audit.tsx';
+import { Customers } from './pages/Customers.tsx';
 import { Login } from './pages/Login.tsx';
 import { StationMap } from './pages/Map.tsx';
-import { Placeholder } from './pages/Placeholder.tsx';
 import { QuickSale } from './pages/QuickSale.tsx';
 import { Reports } from './pages/Reports.tsx';
 import { Settings } from './pages/Settings.tsx';
@@ -45,7 +45,7 @@ export function App() {
             <Route index element={<StationMap />} />
             <Route path="kassa" element={<QuickSale />} />
             <Route path="smena" element={<Shift />} />
-            <Route path="mijozlar" element={<Placeholder title="Mijozlar" phase="5-bosqich" />} />
+            <Route path="mijozlar" element={<Customers />} />
             <Route path="ombor" element={<Stock />} />
             <Route path="hisobotlar" element={<Reports />} />
             <Route path="tariflar" element={<Tariffs />} />

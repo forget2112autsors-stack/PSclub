@@ -25,7 +25,7 @@ Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 | M2 Tariflar | ✓ | Muharrir bilan birga. Teng ustuvorlikda joy turiga bog'langani yutadi |
 | M3 Bufet va ombor | ✓ | Sotuv, kirim, inventarizatsiya, **hisobdan chiqarish**, **ombor tarixi**, **o'rtacha tannarx** ✓. Shtrix-kod yo'q (kam ahamiyatli) |
 | M4 Kassa, to'lov, smena | ◐ | Smena, sverka, chiqim, aralash to'lov, **limitni administrator ochishi** ✓. Click/Payme — 2-bosqich |
-| M5 Mijozlar | ◐ | Mijoz yaratish, qidirish, balans to'ldirish, tarix, bron — API va Telegram orqali ✓. **Operator ekrani yo'q**; abonement va bonus yo'q |
+| M5 Mijozlar | ◐ | Operator ekrani, qidiruv, balans to'ldirish, qarz, qora ro'yxat, seansga bog'lash ✓. **Abonement va bonus yo'q** (5-bosqich) |
 | M6 Hisobot va analitika | ◐ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)** ✓. Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash yo'q |
 | M7 Telegram bot | ✓ | Egasi: kunlik xulosa, ogohlantirishlar, /hozir. Mijoz: ro'yxatdan o'tish, bo'sh joylar, bron, balans, tarix. Tugmalar paneli bilan |
 | M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. Avtomatik backup sozlanmagan, rus tili yo'q |

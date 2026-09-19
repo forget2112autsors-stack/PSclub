@@ -11,6 +11,14 @@ interface Tariff {
   packagePrice: number | null;
 }
 
+interface Customer {
+  id: string;
+  fullName: string;
+  phone: string | null;
+  balance: number;
+  isBlocked: boolean;
+}
+
 interface Props {
   stationId: string;
   stationNumber: number;
@@ -26,6 +34,14 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
   const [packageId, setPackageId] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState('');
+  const [qidiruv, setQidiruv] = useState('');
+
+  const customers = useQuery({
+    queryKey: ['customers', qidiruv],
+    queryFn: () => api<Customer[]>(`/api/customers?q=${encodeURIComponent(qidiruv)}`),
+  });
+  const tanlangan = (customers.data ?? []).find((c) => c.id === customerId) ?? null;
 
   const tariffs = useQuery({ queryKey: ['tariffs'], queryFn: () => api<Tariff[]>('/api/tariffs') });
   const packages = (tariffs.data ?? []).filter((t) => t.kind === 'PACKAGE');
@@ -39,6 +55,7 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
           paymentMode: mode,
           gamepads,
           tariffId: packageId || null,
+          customerId: customerId || null,
           prepaidMinutes: mode === 'PREPAID' ? Number(minutes) || null : null,
           note: note.trim() || null,
         }),
@@ -111,6 +128,70 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
               ))}
             </select>
           </Field>
+        )}
+
+        <div>
+          <span className="mb-1 block text-xs text-slate-400">
+            Mijoz {mode === 'POSTPAID' && <span className="text-amber-400">— qarz yozish uchun kerak</span>}
+          </span>
+
+          {tanlangan ? (
+            <div className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2.5 text-sm">
+              <span>
+                {tanlangan.fullName}
+                <span className={`ml-2 text-xs ${tanlangan.balance < 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                  balans {tanlangan.balance.toLocaleString('uz-UZ')}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setCustomerId('')}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                bekor qilish
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                value={qidiruv}
+                onChange={(e) => setQidiruv(e.target.value)}
+                placeholder="Ism yoki telefon — bo'sh qoldirsangiz mehmon"
+                className={inputClass}
+              />
+              {qidiruv.trim().length > 0 && (
+                <ul className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-slate-950/60">
+                  {(customers.data ?? []).slice(0, 6).map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        disabled={c.isBlocked}
+                        onClick={() => {
+                          setCustomerId(c.id);
+                          setQidiruv('');
+                        }}
+                        className="tap w-full px-3 py-2 text-left text-sm transition hover:bg-slate-800 disabled:opacity-40"
+                      >
+                        {c.fullName}
+                        <span className="ml-2 text-xs text-slate-500">{c.phone}</span>
+                        {c.isBlocked && <span className="ml-2 text-xs text-red-400">qora ro'yxat</span>}
+                      </button>
+                    </li>
+                  ))}
+                  {customers.data?.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-slate-500">Topilmadi.</li>
+                  )}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+
+        {mode === 'POSTPAID' && !customerId && (
+          <p className="rounded-lg bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
+            Mijoz tanlanmasa seans mehmon nomiga ochiladi va qarz bilan yopib bo'lmaydi —
+            yopishda to'liq to'lov olinadi.
+          </p>
         )}
 
         <Field label="Izoh (ixtiyoriy)">
