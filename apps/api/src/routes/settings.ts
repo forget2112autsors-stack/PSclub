@@ -653,6 +653,79 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     });
     return { ok: true };
   });
+
+  // TZ M8: Ma'lumotlar zaxirasi (JSON snapshot) eksport qilish
+  app.get('/api/backup/export', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+
+    const clubId = req.user.clubId;
+    const [
+      club,
+      stationTypes,
+      stations,
+      tariffs,
+      categories,
+      products,
+      customers,
+      suppliers,
+      shifts,
+      sessions,
+      expenses,
+      bookings,
+    ] = await Promise.all([
+      prisma.club.findUnique({ where: { id: clubId } }),
+      prisma.stationType.findMany({ where: { clubId } }),
+      prisma.station.findMany({ where: { clubId } }),
+      prisma.tariff.findMany({ where: { clubId }, include: { schedules: true } }),
+      prisma.productCategory.findMany({ where: { clubId } }),
+      prisma.product.findMany({ where: { clubId } }),
+      prisma.customer.findMany({
+        where: { clubId },
+        include: { packages: true, balanceTxs: { take: 50, orderBy: { createdAt: 'desc' } } },
+      }),
+      prisma.supplier.findMany({ where: { clubId }, include: { invoices: true } }),
+      prisma.shift.findMany({ where: { clubId }, orderBy: { openedAt: 'desc' }, take: 100 }),
+      prisma.session.findMany({
+        where: { station: { clubId } },
+        include: { orderItems: true, segments: true, pauses: true },
+        orderBy: { startedAt: 'desc' },
+        take: 200,
+      }),
+      prisma.expense.findMany({ where: { clubId }, orderBy: { createdAt: 'desc' }, take: 200 }),
+      prisma.booking.findMany({ where: { station: { clubId } }, take: 100 }),
+    ]);
+
+    await audit({
+      userId: req.user.sub,
+      entity: 'Club',
+      entityId: clubId,
+      action: 'backup-export',
+      isCritical: true,
+    });
+
+    const backup = {
+      version: '1.1',
+      exportedAt: new Date().toISOString(),
+      exportedBy: req.user.name,
+      club,
+      stationTypes,
+      stations,
+      tariffs,
+      categories,
+      products,
+      customers,
+      suppliers,
+      shifts,
+      sessions,
+      expenses,
+      bookings,
+    };
+
+    const filename = `psklub_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    reply.header('Content-Type', 'application/json');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return backup;
+  });
 }
 
 function validateTariff(t: z.infer<typeof tariffBody>): string | null {

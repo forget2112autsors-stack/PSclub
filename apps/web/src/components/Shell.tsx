@@ -2,31 +2,33 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { isManager, useAuth } from '../store/auth.ts';
+import { useI18n, type TranslationKey } from '../lib/i18n.ts';
 
 interface NavItem {
   to: string;
-  label: string;
+  key: TranslationKey;
   managerOnly?: boolean;
 }
 
 // TZ 8-bo'lim. Seans oynasi alohida sahifa emas — xaritadan ochiladi.
 const NAV: NavItem[] = [
-  { to: '/', label: 'Joylar xaritasi' },
-  { to: '/bronlar', label: 'Bronlar' },
-  { to: '/kassa', label: 'Tez kassa' },
-  { to: '/smena', label: 'Smena' },
-  { to: '/mijozlar', label: 'Mijozlar' },
-  { to: '/ombor', label: 'Ombor' },
-  { to: '/taminotchilar', label: 'Ta\'minotchilar', managerOnly: true },
-  { to: '/hisobotlar', label: 'Hisobotlar' },
-  { to: '/tariflar', label: 'Tariflar', managerOnly: true },
-  { to: '/audit', label: 'Audit jurnali', managerOnly: true },
-  { to: '/sozlamalar', label: 'Sozlamalar', managerOnly: true },
+  { to: '/', key: 'map' },
+  { to: '/bronlar', key: 'bookings' },
+  { to: '/kassa', key: 'quickSale' },
+  { to: '/smena', key: 'shift' },
+  { to: '/mijozlar', key: 'customers' },
+  { to: '/ombor', key: 'stock' },
+  { to: '/taminotchilar', key: 'suppliers', managerOnly: true },
+  { to: '/hisobotlar', key: 'reports' },
+  { to: '/tariflar', key: 'tariffs', managerOnly: true },
+  { to: '/audit', key: 'audit', managerOnly: true },
+  { to: '/sozlamalar', key: 'settings', managerOnly: true },
 ];
 
 export function Shell() {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
+  const { lang, setLang, t } = useI18n();
   const navigate = useNavigate();
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -63,9 +65,28 @@ export function Shell() {
   return (
     <div className="flex min-h-dvh bg-slate-950 text-slate-100">
       <nav className="flex w-56 shrink-0 flex-col border-r border-slate-800 p-3">
-        <div className="px-2 py-3">
-          <p className="text-sm font-semibold">PS Klub</p>
-          <p className="text-xs text-slate-400">{user?.name}</p>
+        <div className="flex items-center justify-between px-2 py-3">
+          <div>
+            <p className="text-sm font-semibold">PS Klub</p>
+            <p className="text-xs text-slate-400">{user?.name}</p>
+          </div>
+          {/* UZ / RU Til tanlash tugmasi (TZ M8) */}
+          <div className="flex items-center rounded-lg border border-slate-700 bg-slate-900 p-0.5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setLang('uz')}
+              className={`rounded px-1.5 py-0.5 transition ${lang === 'uz' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              UZ
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang('ru')}
+              className={`rounded px-1.5 py-0.5 transition ${lang === 'ru' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              RU
+            </button>
+          </div>
         </div>
 
         <div className="mt-2 flex-1 space-y-1">
@@ -80,7 +101,7 @@ export function Shell() {
                 }`
               }
             >
-              <span>{item.label}</span>
+              <span>{t(item.key)}</span>
               <kbd className="text-[10px] text-slate-500">Alt+{index + 1}</kbd>
             </NavLink>
           ))}
@@ -91,7 +112,7 @@ export function Shell() {
           onClick={logout}
           className="tap rounded-lg px-3 py-2.5 text-left text-sm text-slate-400 transition hover:bg-slate-900 hover:text-slate-200"
         >
-          Chiqish
+          {t('logout')}
         </button>
       </nav>
 
@@ -101,7 +122,7 @@ export function Shell() {
             role="alert"
             className="bg-red-600 px-4 py-2 text-center text-xs font-medium text-white shadow-md"
           >
-            ⚠ Internet aloqasi yo'q! Kiritilgan amallar saqlanmasligi mumkin. Aloqa tiklanishi kutilmoqda…
+            {t('offlineAlert')}
           </div>
         )}
         <main className="flex-1 overflow-x-hidden p-6">

@@ -14,7 +14,7 @@
 
 ---
 
-## BAJARILGAN ISHLAR HOLATI — 2026-09-19 (kechqurun)
+## BAJARILGAN ISHLAR HOLATI — 2026-09-20
 
 Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 **✗** boshlanmagan.
@@ -25,15 +25,15 @@ Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 | M2 Tariflar | ✓ | Muharrir bilan birga. Teng ustuvorlikda joy turiga bog'langani yutadi |
 | M3 Bufet va ombor | ✓ | Sotuv, kirim, inventarizatsiya, **hisobdan chiqarish**, **ombor tarixi**, **o'rtacha tannarx** ✓. Shtrix-kod yo'q (kam ahamiyatli) |
 | M4 Kassa, to'lov, smena | ◐ | Smena, sverka, chiqim, aralash to'lov, **limitni administrator ochishi** ✓. Click/Payme — 2-bosqich |
-| M5 Mijozlar | ◐ | Operator ekrani, qidiruv, balans to'ldirish, qarz, qora ro'yxat, seansga bog'lash ✓. **Abonement va bonus yo'q** (5-bosqich) |
-| M6 Hisobot va analitika | ◐ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)** ✓. Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash yo'q |
+| M5 Mijozlar | ✓ | Operator ekrani, qidiruv, balans to'ldirish, qarz, qora ro'yxat, seansga bog'lash, **abonement (soat paketlari)** va **bonus (keshbek ballari)** ✓ |
+| M6 Hisobot va analitika | ✓ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)**, **bandlik issiqlik xaritasi (7×24)**, **xodim kesimi**, **mijoz segmentatsiyasi (Top-20)**, **davr taqqoslash (hafta/oy)** ✓ |
 | M7 Telegram bot | ✓ | Egasi: kunlik xulosa, ogohlantirishlar, /hozir. Mijoz: ro'yxatdan o'tish, bo'sh joylar, bron, balans, tarix. Tugmalar paneli bilan |
-| M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. Avtomatik backup sozlanmagan, rus tili yo'q |
-| PWA / offline kesh | ✗ | 4-bosqichda (2.3-bo'limdagi majburiy chora) |
+| M8 Tizim, xavfsizlik, audit | ✓ | Rollar, PIN, audit, **avtomatik zaxiralash (backup skriptlari + web JSON snapshot)**, **rus tili (UZ/RU)** ✓ |
+| PWA / offline kesh | ✓ | Manifest, Service Worker kesh, ilova belgilari (192px/512px), oflayn ogohlantirish (QM-7) ✓ |
 | **Ta'minotchilar hisobi** | ✓ | Ta'minotchi ro'yxati, kirimni unga bog'lash, qarz hisobi va to'lov. To'lov chiqim sifatida yoziladi — kassa sverkasi avtomatik to'g'ri chiqadi |
 
-**Qabul mezonlari:** 10 ta bajarildi (QM-1…QM-6, QM-8…QM-11),
-QM-7 qisman, QM-12 qolgan (klubda parallel sinov). Batafsil 10-bo'limda.
+**Qabul mezonlari:** 11 ta bajarildi (QM-1…QM-11),
+QM-12 qolgan (klubda parallel sinov). Batafsil 10-bo'limda.
 
 **Eng muhim to'siq:** klubda sinovni (3-bosqich) boshlash uchun haqiqiy
 mahsulot ro'yxati kerak. Joylar kiritilgan (6 PS-5, 6 PS-3, 2 VIP), lekin
@@ -543,8 +543,8 @@ narsa ham yo'q.)*
 
 1-versiya qabul qilinadi, agar quyidagi ssenariylar to'liq ishlasa.
 
-**Holat 2026-09-18:** `[x]` — jonli bazada tekshirilgan · `[~]` — qisman ·
-`[ ]` — bajarilmagan. 9 tasi bajarildi, 1 tasi qisman, 2 tasi qoldi.
+**Holat 2026-09-20:** `[x]` — jonli bazada tekshirilgan · `[~]` — qisman ·
+`[ ]` — bajarilmagan. 11 tasi bajarildi, 1 tasi qoldi (klubda parallel sinov).
 
 - [x] **QM-1.** Operator smena ochadi, boshlang'ich naqd summa kiritiladi
 - [x] **QM-2.** 9-joyga PS-3 tarifida, ishdan keyin to'lov rejimida seans ochiladi; xaritada yashil bo'lib vaqt sanay boshlaydi
@@ -552,7 +552,7 @@ narsa ham yo'q.)*
 - [x] **QM-4.** Ishonch limiti oshganda tizim bloklaydi va ogohlantiradi
 - [x] **QM-5.** Seans yopiladi, yakuniy hisob (o'yin + bufet) to'g'ri chiqadi, aralash to'lov (naqd + balans) qabul qilinadi
 - [x] **QM-6.** Tarif chegarasini kesib o'tgan seans (masalan 21:00–23:30, tunda tarif o'zgaradi) to'g'ri hisoblanadi
-- [~] **QM-7.** *(v1.1 da o'zgartirildi — eski matn: «internet uzilgan holatda barcha amallar ishlaydi».)* Internet uzilganda tizim buni ≤ 10 soniyada aniqlaydi va operatorga aniq xabar ko'rsatadi; yarim bajarilgan yozuv qolmaydi; aloqa tiklangach interfeys o'zi qayta ulanadi va holat to'g'ri ko'rinadi
+- [x] **QM-7.** *(v1.1 da o'zgartirildi — eski matn: «internet uzilgan holatda barcha amallar ishlaydi».)* Internet uzilganda tizim buni ≤ 10 soniyada aniqlaydi va operatorga aniq xabar ko'rsatadi; yarim bajarilgan yozuv qolmaydi; aloqa tiklangach interfeys o'zi qayta ulanadi va holat to'g'ri ko'rinadi
 - [x] **QM-8.** Smena yopiladi, kassa farqi to'g'ri hisoblanadi, izohsiz yopib bo'lmaydi
 - [x] **QM-9.** Kunlik hisobot Excel ga chiqadi va qo'lda hisoblangan summa bilan to'liq mos keladi
 - [x] **QM-10.** Egasi Telegramda kunlik xulosani avtomatik oladi

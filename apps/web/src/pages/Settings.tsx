@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import { Field, Modal, inputClass } from '../components/Modal.tsx';
 import { isManager, useAuth } from '../store/auth.ts';
+import { useI18n } from '../lib/i18n.ts';
 
 interface StationType {
   id: string;
@@ -59,6 +60,33 @@ export function Settings() {
   const [addingStaff, setAddingStaff] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
+
+  const { lang, setLang, t } = useI18n();
+  const [exporting, setExporting] = useState(false);
+
+  const downloadBackup = async () => {
+    try {
+      setExporting(true);
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/backup/export', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Zaxira nusxasini yuklab olishda xatolik yuz berdi.');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `psklub_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const types = useQuery({ queryKey: ['station-types'], queryFn: () => api<StationType[]>('/api/station-types') });
   const stations = useQuery({ queryKey: ['stations'], queryFn: () => api<Station[]>('/api/stations') });
@@ -419,6 +447,53 @@ export function Settings() {
           </div>
         </section>
       )}
+
+      {/* TZ M8: Tizim sozlamalari, Til va Zaxira nusxa (Backup) */}
+      <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <h2 className="text-base font-semibold text-slate-200">{t('backupSection')}</h2>
+
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <p className="text-sm font-medium text-slate-300">{t('language')}</p>
+            <p className="text-xs text-slate-400">Interfeys tilini tanlash (O'zbekcha / Русский)</p>
+          </div>
+          <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 p-1 text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => setLang('uz')}
+              className={`rounded px-3 py-1 transition ${lang === 'uz' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              O'zbekcha
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang('ru')}
+              className={`rounded px-3 py-1 transition ${lang === 'ru' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              Русский
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-slate-300">Ma'lumotlar bazasi zaxira nusxasi</p>
+            <p className="text-xs text-slate-400">{t('backupHelp')}</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              VPS da har kuni avtomatik zaxira olinadi va 30 kun saqlanadi (scripts/backup.sh).
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={downloadBackup}
+            className="tap inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-600 disabled:opacity-50"
+          >
+            <span>💾</span>
+            {exporting ? t('downloadingBackup') : t('downloadBackup')}
+          </button>
+        </div>
+      </section>
 
       <p className="text-sm text-slate-400">Tariflar alohida bo'limda — chap menyudagi "Tariflar".</p>
 

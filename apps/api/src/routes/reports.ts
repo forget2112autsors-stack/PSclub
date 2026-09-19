@@ -4,7 +4,13 @@ import { z } from 'zod';
 
 import { prisma } from '../db.ts';
 import { requireAuth, requireManager } from '../auth.ts';
-import { dailyReport } from '../services/report.ts';
+import {
+  customerSegmentation,
+  dailyReport,
+  occupancyHeatmap,
+  operatorStats,
+  periodComparison,
+} from '../services/report.ts';
 
 const METHOD_LABEL: Record<string, string> = {
   CASH: 'Naqd',
@@ -30,6 +36,31 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/reports/daily', async (req) => {
     const { date } = dateQuery.parse(req.query ?? {});
     return dailyReport(req.user.clubId, date ?? (await todayFor(req.user.clubId)));
+  });
+
+  // TZ M6.2: Bandlik issiqlik xaritasi
+  app.get('/api/reports/heatmap', async (req) => {
+    const days = Number((req.query as { days?: string })?.days) || 14;
+    return occupancyHeatmap(req.user.clubId, days);
+  });
+
+  // TZ M6.2: Xodimlar kesimi
+  app.get('/api/reports/operators', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const days = Number((req.query as { days?: string })?.days) || 30;
+    return operatorStats(req.user.clubId, days);
+  });
+
+  // TZ M5.3, M6.2: Mijozlar segmentatsiyasi
+  app.get('/api/reports/customers-analytics', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    return customerSegmentation(req.user.clubId);
+  });
+
+  // TZ M6.2: Davriy taqqoslash
+  app.get('/api/reports/comparison', async (req) => {
+    const period = ((req.query as { period?: string })?.period as 'week' | 'month') || 'week';
+    return periodComparison(req.user.clubId, period);
   });
 
   // Excel eksport — TZ M6.3, QM-9.

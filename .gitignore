@@ -11,3 +11,4 @@ apps/web/dev-dist/
 .vercel
 .env*
 !.env.example
+scratch/
