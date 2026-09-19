@@ -1,6 +1,11 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 
 import { env } from './env.ts';
@@ -95,6 +100,24 @@ await app.register(sessionRoutes);
 await app.register(shiftRoutes);
 await app.register(reportRoutes);
 await app.register(realtimeRoutes);
+
+// ----------------------------------------------------------- Interfeys -----
+// Qurilgan frontend shu serverning o'zidan tarqatiladi: klubda bitta jarayon
+// ishlaydi, alohida veb-server sozlash kerak emas.
+const webDist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
+
+if (existsSync(join(webDist, 'index.html'))) {
+  await app.register(fastifyStatic, { root: webDist });
+
+  // Sahifa manzillari (masalan /smena) brauzerda to'g'ridan-to'g'ri ochilsa
+  // ham ishlashi kerak — ular serverda fayl emas, React yo'nalishlari.
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'Topilmadi.' });
+    return reply.sendFile('index.html');
+  });
+} else {
+  app.log.warn('apps/web/dist topilmadi — interfeys tarqatilmaydi. "npm run build" bajaring.');
+}
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
