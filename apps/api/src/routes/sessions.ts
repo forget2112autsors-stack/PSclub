@@ -14,7 +14,9 @@ import {
   openSession,
   pauseSession,
   paySession,
+  quickSale,
   removeItem,
+  restoreSession,
   resumeSession,
   sessionDetail,
   splitSession,
@@ -36,6 +38,7 @@ const openBody = z.object({
   creditLimit: z.number().int().min(0).optional(),
   prepaidMinutes: z.number().int().min(1).nullable().default(null),
   note: z.string().nullable().default(null),
+  startedAt: z.coerce.date().nullable().optional(),
 });
 
 /** Ochiq smenani qaytaradi. Smenasiz pul operatsiyasi bo'lmaydi — TZ M4.1. */
@@ -164,33 +167,32 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  // Bekor qilingan seansni qayta tiklash — faqat administrator.
+  app.post('/api/sessions/:id/restore', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    await restoreSession(idParam.parse(req.params).id, req.user.sub);
+    return { ok: true };
+  });
+
   // Tez kassa — o'yinsiz sotuv (TZ M3.2). Bir nechta mahsulot birga sotiladi.
   app.post('/api/sales', async (req) => {
     const body = z
       .object({
+        customerId: z.string().nullable().optional(),
         items: z.array(z.object({ productId: z.string().min(1), qty: z.number().int().min(1) })).min(1),
-        payments: z.array(paymentSchema).default([]),
+        payments: z.array(paymentSchema).min(1),
       })
       .parse(req.body);
     const shift = await currentShift(req.user.clubId);
 
-    // Qoldiq yetmasa addItem xato beradi va keyingilari yozilmaydi.
-    for (const item of body.items) {
-      await addItem(null, item.productId, item.qty, { userId: req.user.sub, shiftId: shift.id });
-    }
-    for (const payment of body.payments) {
-      if (payment.amount <= 0) continue;
-      await prisma.payment.create({
-        data: {
-          shiftId: shift.id,
-          operatorId: req.user.sub,
-          method: payment.method,
-          amount: payment.amount,
-          note: 'Tez kassa',
-        },
-      });
-    }
-    return { ok: true };
+    return quickSale({
+      clubId: req.user.clubId,
+      userId: req.user.sub,
+      shiftId: shift.id,
+      customerId: body.customerId ?? null,
+      items: body.items,
+      payments: body.payments,
+    });
   });
 
   app.get('/api/products', async (req) =>

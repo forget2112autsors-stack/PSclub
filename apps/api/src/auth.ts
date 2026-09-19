@@ -28,6 +28,10 @@ declare module '@fastify/jwt' {
 
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
+    const queryToken = (req.query as { token?: string })?.token;
+    if (queryToken && !req.headers.authorization) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
     await req.jwtVerify();
   } catch {
     await reply.code(401).send({ error: 'Kirish talab qilinadi.' });

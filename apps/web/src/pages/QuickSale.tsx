@@ -13,6 +13,14 @@ interface Product {
   category: { name: string } | null;
 }
 
+interface Customer {
+  id: string;
+  fullName: string;
+  phone: string;
+  balance: number;
+  isBlocked: boolean;
+}
+
 const summa = (v: number) => v.toLocaleString('uz-UZ');
 
 export function QuickSale() {
@@ -20,39 +28,59 @@ export function QuickSale() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [cash, setCash] = useState('');
   const [card, setCard] = useState('');
+  const [balance, setBalance] = useState('');
+  const [customerId, setCustomerId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
   const shift = useQuery({ queryKey: ['shift'], queryFn: () => api<{ shift: unknown }>('/api/shifts/current') });
+  const customers = useQuery({ queryKey: ['customers'], queryFn: () => api<Customer[]>('/api/customers') });
 
   const list = products.data ?? [];
+  const selectedCustomer = (customers.data ?? []).find((c) => c.id === customerId);
+
   const lines = Object.entries(cart)
     .map(([id, qty]) => ({ product: list.find((p) => p.id === id), qty }))
     .filter((l): l is { product: Product; qty: number } => Boolean(l.product));
   const total = lines.reduce((s, l) => s + l.product.salePrice * l.qty, 0);
 
+  const paidCash = Number(cash) || 0;
+  const paidCard = Number(card) || 0;
+  const paidBalance = Number(balance) || 0;
+  const totalPaid = paidCash + paidCard + paidBalance;
+  const remaining = total - totalPaid;
+  const canSell = lines.length > 0 && total > 0 && totalPaid >= total;
+
   const sell = useMutation({
-    mutationFn: () =>
-      api('/api/sales', {
+    mutationFn: () => {
+      const payments = [
+        { method: 'CASH', amount: paidCash },
+        { method: 'CARD', amount: paidCard },
+        { method: 'BALANCE', amount: paidBalance },
+      ].filter((p) => p.amount > 0);
+
+      return api('/api/sales', {
         method: 'POST',
         body: JSON.stringify({
+          customerId: customerId || null,
           items: lines.map((l) => ({ productId: l.product.id, qty: l.qty })),
-          payments: [
-            { method: 'CASH', amount: Number(cash) || 0 },
-            { method: 'CARD', amount: Number(card) || 0 },
-          ].filter((p) => p.amount > 0),
+          payments,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       setCart({});
       setCash('');
       setCard('');
+      setBalance('');
+      setCustomerId('');
       setError(null);
       setDone(true);
       setTimeout(() => setDone(false), 2500);
       void client.invalidateQueries({ queryKey: ['products'] });
       void client.invalidateQueries({ queryKey: ['shift'] });
+      void client.invalidateQueries({ queryKey: ['customers'] });
     },
     onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik.'),
   });
@@ -138,9 +166,69 @@ export function QuickSale() {
           </ul>
         )}
 
-        <p className="border-t border-slate-800 pt-3 text-right">
-          Jami: <span className="font-medium text-emerald-400">{summa(total)}</span> so'm
-        </p>
+        <div className="space-y-2 border-t border-slate-800 pt-3">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-slate-400">Jami to'lov:</span>
+            <span className="text-base font-semibold text-emerald-400">{summa(total)} so'm</span>
+          </div>
+          {total > 0 && (
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-400">Kiritildi:</span>
+              <span className={`font-medium ${totalPaid >= total ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {summa(totalPaid)} so'm
+              </span>
+            </div>
+          )}
+        </div>
+
+        <Field label="Mijoz (ixtiyoriy)">
+          <select
+            value={customerId}
+            onChange={(e) => {
+              setCustomerId(e.target.value);
+              setBalance('');
+            }}
+            className={inputClass}
+          >
+            <option value="">Oddiy mehmon</option>
+            {(customers.data ?? []).map((c) => (
+              <option key={c.id} value={c.id} className="bg-slate-900">
+                {c.fullName} ({c.phone}) — {summa(c.balance)} so'm
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {selectedCustomer && (
+          <div className="space-y-1 rounded-lg bg-slate-950/50 p-2.5">
+            <div className="flex justify-between items-center text-xs text-slate-400">
+              <span>Balans: <strong className="text-slate-200">{summa(selectedCustomer.balance)} so'm</strong></span>
+              {selectedCustomer.balance > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const canPay = Math.min(selectedCustomer.balance, total);
+                    setBalance(String(canPay));
+                    const rest = Math.max(0, total - canPay);
+                    setCash(String(rest));
+                    setCard('0');
+                  }}
+                  className="text-emerald-400 underline hover:text-emerald-300"
+                >
+                  Balansdan to'lash
+                </button>
+              )}
+            </div>
+            <Field label="Balansdan">
+              <input
+                value={balance}
+                onChange={(e) => setBalance(e.target.value.replace(/\D/g, ''))}
+                inputMode="numeric"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <Field label="Naqd">
@@ -160,13 +248,30 @@ export function QuickSale() {
             />
           </Field>
         </div>
+
         <button
           type="button"
-          onClick={() => setCash(String(total))}
+          onClick={() => {
+            setCash(String(total));
+            setCard('0');
+            setBalance('0');
+          }}
           className="tap w-full rounded-lg bg-slate-800 py-2 text-xs transition hover:bg-slate-700"
         >
           Hammasi naqd
         </button>
+
+        {lines.length > 0 && remaining > 0 && (
+          <p className="rounded-lg bg-amber-950/40 p-2.5 text-xs text-amber-300 border border-amber-900/50">
+            To'lov yetarli emas: <strong className="tabular-nums">{summa(remaining)}</strong> so'm kerak.
+          </p>
+        )}
+
+        {lines.length > 0 && remaining < 0 && (
+          <p className="rounded-lg bg-emerald-950/40 p-2.5 text-xs text-emerald-300 border border-emerald-900/50">
+            Qaytim: <strong className="tabular-nums">{summa(-remaining)}</strong> so'm.
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-300">
@@ -177,7 +282,7 @@ export function QuickSale() {
 
         <button
           type="button"
-          disabled={lines.length === 0 || sell.isPending}
+          disabled={!canSell || sell.isPending}
           onClick={() => sell.mutate()}
           className="tap w-full rounded-lg bg-emerald-600 py-3 font-medium transition hover:bg-emerald-500 disabled:opacity-40"
         >

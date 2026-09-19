@@ -59,8 +59,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   // ------------------------------------------------------------ Joy turlari --
 
-  app.get('/api/station-types', async () =>
-    prisma.stationType.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }),
+  app.get('/api/station-types', async (req) =>
+    prisma.stationType.findMany({
+      where: { clubId: req.user.clubId },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    }),
   );
 
   app.post('/api/station-types', async (req, reply) => {
@@ -80,7 +83,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const body = onlySent(req.body, stationTypeBody.partial().parse(req.body));
 
     const before = await prisma.stationType.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Joy turi topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Joy turi topilmadi.' });
 
     const updated = await prisma.stationType.update({ where: { id }, data: body });
     await audit({ userId: req.user.sub, entity: 'StationType', entityId: id, action: 'update', oldValue: before, newValue: updated });
@@ -97,7 +100,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const before = await prisma.stationType.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Joy turi topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Joy turi topilmadi.' });
 
     await prisma.stationType.delete({ where: { id } });
     await audit({ userId: req.user.sub, entity: 'StationType', entityId: id, action: 'delete', oldValue: before, isCritical: true });
@@ -106,8 +109,9 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   // ----------------------------------------------------------------- Joylar --
 
-  app.get('/api/stations', async () =>
+  app.get('/api/stations', async (req) =>
     prisma.station.findMany({
+      where: { clubId: req.user.clubId },
       include: { type: { select: { id: true, name: true } } },
       orderBy: [{ sortOrder: 'asc' }, { number: 'asc' }],
     }),
@@ -137,7 +141,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const body = onlySent(req.body, schema.parse(req.body));
 
     const before = await prisma.station.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Joy topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Joy topilmadi.' });
 
     const updated = await prisma.station.update({ where: { id }, data: body });
     await audit({ userId: req.user.sub, entity: 'Station', entityId: id, action: 'update', oldValue: before, newValue: updated });
@@ -156,7 +160,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const before = await prisma.station.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Joy topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Joy topilmadi.' });
 
     await prisma.station.delete({ where: { id } });
     await audit({ userId: req.user.sub, entity: 'Station', entityId: id, action: 'delete', oldValue: before, isCritical: true });
@@ -168,7 +172,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/tariffs', async (req) => {
     const all = (req.query as { all?: string })?.all === '1';
     return prisma.tariff.findMany({
-      where: all ? {} : { isActive: true },
+      where: { clubId: req.user.clubId, ...(all ? {} : { isActive: true }) },
       include: { schedules: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
@@ -199,7 +203,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const body = onlySent(req.body, tariffBody.partial().parse(req.body));
 
     const before = await prisma.tariff.findUnique({ where: { id }, include: { schedules: true } });
-    if (!before) return reply.code(404).send({ error: 'Tarif topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Tarif topilmadi.' });
 
     const invalid = validateTariff({ ...before, ...body } as z.infer<typeof tariffBody>);
     if (invalid) return reply.code(400).send({ error: invalid });
@@ -224,7 +228,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParam.parse(req.params);
 
     const before = await prisma.tariff.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Tarif topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Tarif topilmadi.' });
 
     const updated = await prisma.tariff.update({ where: { id }, data: { isActive: false } });
     await audit({ userId: req.user.sub, entity: 'Tariff', entityId: id, action: 'archive', oldValue: before, isCritical: true });
@@ -283,7 +287,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     const body = onlySent(req.body, productBody.partial().extend({ isActive: z.boolean().optional() }).parse(req.body));
 
     const before = await prisma.product.findUnique({ where: { id } });
-    if (!before) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
 
     const updated = await prisma.product.update({ where: { id }, data: body });
     await audit({ userId: req.user.sub, entity: 'Product', entityId: id, action: 'update', oldValue: before, newValue: updated, isCritical: body.salePrice !== undefined });
@@ -304,7 +308,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       .parse(req.body);
 
     const product = await prisma.product.findUnique({ where: { id: body.productId } });
-    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+    if (!product || product.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
 
     // Tannarx ustiga yozilmaydi, qoldiq bilan tortib o'rtachalanadi (TZ M3.3).
     const yangiTannarx =
@@ -359,7 +363,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       .parse(req.body);
 
     const product = await prisma.product.findUnique({ where: { id: body.productId } });
-    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+    if (!product || product.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
     if (product.stockQty < body.qty) {
       return reply.code(400).send({ error: `Omborda ${product.stockQty} dona bor, ${body.qty} dona chiqarib bo'lmaydi.` });
     }
@@ -447,7 +451,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       .parse(req.body);
 
     const product = await prisma.product.findUnique({ where: { id: body.productId } });
-    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+    if (!product || product.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
 
     const diff = body.countedQty - product.stockQty;
     if (diff === 0) {

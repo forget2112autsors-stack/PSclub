@@ -11,11 +11,13 @@ export async function currentShift(clubId: string) {
 }
 
 export async function openShift(clubId: string, operatorId: string, openingCash: number) {
-  const existing = await currentShift(clubId);
-  if (existing) fail('Ochiq smena allaqachon bor — avval uni yoping.');
+  const shift = await prisma.$transaction(async (tx) => {
+    const existing = await tx.shift.findFirst({ where: { clubId, status: 'OPEN' } });
+    if (existing) fail('Ochiq smena allaqachon bor — avval uni yoping.');
 
-  const shift = await prisma.shift.create({
-    data: { clubId, operatorId, openingCash },
+    return tx.shift.create({
+      data: { clubId, operatorId, openingCash },
+    });
   });
   await audit({
     userId: operatorId,

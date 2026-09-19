@@ -222,6 +222,13 @@ function CustomerDetail({
     void client.invalidateQueries({ queryKey: ['shift'] });
   };
 
+  const [showPkgForm, setShowPkgForm] = useState(false);
+  const [pkgName, setPkgName] = useState('');
+  const [pkgHours, setPkgHours] = useState('10');
+  const [pkgPrice, setPkgPrice] = useState('200000');
+  const [pkgDays, setPkgDays] = useState('30');
+  const [pkgMethod, setPkgMethod] = useState<'CASH' | 'CARD'>('CASH');
+
   const topup = useMutation({
     mutationFn: () =>
       api(`/api/customers/${customer.id}/topup`, {
@@ -230,6 +237,36 @@ function CustomerDetail({
       }),
     onSuccess: () => {
       setAmount('');
+      after();
+    },
+    onError,
+  });
+
+  const useBonus = useMutation({
+    mutationFn: (points: number) =>
+      api(`/api/customers/${customer.id}/use-bonus`, {
+        method: 'POST',
+        body: JSON.stringify({ points }),
+      }),
+    onSuccess: after,
+    onError,
+  });
+
+  const buyPackage = useMutation({
+    mutationFn: () =>
+      api(`/api/customers/${customer.id}/packages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: pkgName.trim() || `${pkgHours} soatlik paket`,
+          totalMinutes: (Number(pkgHours) || 1) * 60,
+          amount: Number(pkgPrice) || 0,
+          method: pkgMethod,
+          daysValid: Number(pkgDays) || null,
+        }),
+      }),
+    onSuccess: () => {
+      setShowPkgForm(false);
+      setPkgName('');
       after();
     },
     onError,
@@ -256,12 +293,16 @@ function CustomerDetail({
             </p>
           )}
 
-          <section className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <section className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
             <div>
               <p className="text-xs text-slate-400">Balans</p>
               <p className={`font-medium ${d.customer.balance < 0 ? 'text-amber-400' : ''}`}>
                 {summa(d.customer.balance)}
               </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Bonus</p>
+              <p className="font-medium text-emerald-400">{summa(d.customer.bonusPoints ?? 0)} ball</p>
             </div>
             <div>
               <p className="text-xs text-slate-400">Telefon</p>
@@ -276,6 +317,22 @@ function CustomerDetail({
               <p className="font-medium">{summa(d.totalSpent)}</p>
             </div>
           </section>
+
+          {d.customer.bonusPoints > 0 && (
+            <div className="flex items-center justify-between rounded-xl border border-emerald-800/40 bg-emerald-950/30 p-3 text-sm">
+              <span>
+                To'plangan keshbek: <b>{summa(d.customer.bonusPoints)}</b> bonus ball
+              </span>
+              <button
+                type="button"
+                disabled={useBonus.isPending}
+                onClick={() => useBonus.mutate(d.customer.bonusPoints)}
+                className="tap rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-600 disabled:opacity-50"
+              >
+                Balansga o'tkazish (+{summa(d.customer.bonusPoints)} so'm)
+              </button>
+            </div>
+          )}
 
           <section className="space-y-2 rounded-xl bg-slate-950/60 p-4">
             <Field label="Balansni to'ldirish (naqd)">
@@ -306,9 +363,80 @@ function CustomerDetail({
             <p className="text-xs text-slate-500">Pul kassaga tushadi. Smena ochiq bo'lishi kerak.</p>
           </section>
 
-          {d.packages.length > 0 && (
-            <section>
-              <h3 className="mb-2 text-xs text-slate-400">Paketlar</h3>
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs text-slate-400">Abonement paketlari</h3>
+              <button
+                type="button"
+                onClick={() => setShowPkgForm((v) => !v)}
+                className="text-xs text-emerald-400 hover:text-emerald-300"
+              >
+                {showPkgForm ? 'Bekor qilish' : '+ Paket sotish'}
+              </button>
+            </div>
+
+            {showPkgForm && (
+              <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
+                <Field label="Paket nomi">
+                  <input
+                    value={pkgName}
+                    onChange={(e) => setPkgName(e.target.value)}
+                    placeholder="Masalan: 10 soat PS-5"
+                    className={inputClass}
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Soat soni">
+                    <input
+                      type="number"
+                      value={pkgHours}
+                      onChange={(e) => setPkgHours(e.target.value)}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Narxi (so'm)">
+                    <input
+                      type="number"
+                      value={pkgPrice}
+                      onChange={(e) => setPkgPrice(e.target.value)}
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Muddati (kun)">
+                    <input
+                      type="number"
+                      value={pkgDays}
+                      onChange={(e) => setPkgDays(e.target.value)}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="To'lov turi">
+                    <select
+                      value={pkgMethod}
+                      onChange={(e) => setPkgMethod(e.target.value as 'CASH' | 'CARD')}
+                      className={inputClass}
+                    >
+                      <option value="CASH">Naqd</option>
+                      <option value="CARD">Karta</option>
+                    </select>
+                  </Field>
+                </div>
+                <button
+                  type="button"
+                  disabled={buyPackage.isPending}
+                  onClick={() => buyPackage.mutate()}
+                  className="tap w-full rounded-lg bg-emerald-600 py-2 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:opacity-40"
+                >
+                  {buyPackage.isPending ? 'Saqlanmoqda…' : 'Paketni sotish'}
+                </button>
+              </div>
+            )}
+
+            {d.packages.length === 0 ? (
+              <p className="text-xs text-slate-500">Faol paketlar yo'q.</p>
+            ) : (
               <ul className="space-y-1 text-sm">
                 {d.packages.map((p) => (
                   <li key={p.id} className="flex justify-between rounded-lg bg-slate-900 px-3 py-2">
@@ -320,8 +448,8 @@ function CustomerDetail({
                   </li>
                 ))}
               </ul>
-            </section>
-          )}
+            )}
+          </section>
 
           <section>
             <h3 className="mb-2 text-xs text-slate-400">Oxirgi seanslar</h3>

@@ -45,14 +45,50 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { name: 'asc' },
     });
 
-    return Promise.all(
-      rows.map(async (s) => ({ ...s, ...(await supplierBalance(s.id)) })),
-    );
+    if (rows.length === 0) return [];
+    const supplierIds = rows.map((s) => s.id);
+
+    const [intakes, paidGroup] = await Promise.all([
+      prisma.stockMovement.findMany({
+        where: { supplierId: { in: supplierIds }, type: 'IN' },
+        select: { supplierId: true, qty: true, unitCost: true },
+      }),
+      prisma.expense.groupBy({
+        by: ['supplierId'],
+        where: { supplierId: { in: supplierIds } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const kelganMap = new Map<string, number>();
+    for (const m of intakes) {
+      if (m.supplierId) {
+        kelganMap.set(m.supplierId, (kelganMap.get(m.supplierId) ?? 0) + m.qty * (m.unitCost ?? 0));
+      }
+    }
+
+    const tolanganMap = new Map<string, number>();
+    for (const p of paidGroup) {
+      if (p.supplierId) {
+        tolanganMap.set(p.supplierId, p._sum.amount ?? 0);
+      }
+    }
+
+    return rows.map((s) => {
+      const kelgan = kelganMap.get(s.id) ?? 0;
+      const tolangan = tolanganMap.get(s.id) ?? 0;
+      return {
+        ...s,
+        kelgan,
+        tolangan,
+        qarz: kelgan - tolangan,
+      };
+    });
   });
 
   app.get('/api/suppliers/:id', async (req) => {
     const { id } = idParam.parse(req.params);
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
+    const supplier = await prisma.supplier.findFirst({ where: { id, clubId: req.user.clubId } });
     if (!supplier) fail('Ta\'minotchi topilmadi.');
 
     const [movements, payments] = await Promise.all([
@@ -103,6 +139,9 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/suppliers/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
+    const supplier = await prisma.supplier.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!supplier) fail('Ta\'minotchi topilmadi.');
+
     const body = z
       .object({
         name: z.string().min(1).optional(),
@@ -124,7 +163,7 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
       .object({ amount: z.number().int().min(1), note: z.string().nullable().default(null) })
       .parse(req.body);
 
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
+    const supplier = await prisma.supplier.findFirst({ where: { id, clubId: req.user.clubId } });
     if (!supplier) fail('Ta\'minotchi topilmadi.');
 
     const shift = await prisma.shift.findFirst({ where: { clubId: req.user.clubId, status: 'OPEN' } });
@@ -155,6 +194,9 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/suppliers/:id', async (req, reply) => {
     if (!requireManager(req, reply)) return;
     const { id } = idParam.parse(req.params);
+
+    const supplier = await prisma.supplier.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!supplier) fail('Ta\'minotchi topilmadi.');
 
     const [intakes, payments] = await Promise.all([
       prisma.stockMovement.count({ where: { supplierId: id } }),

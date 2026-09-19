@@ -19,7 +19,7 @@ import { reportRoutes } from './routes/reports.ts';
 import { customerRoutes } from './routes/customers.ts';
 import { supplierRoutes } from './routes/suppliers.ts';
 import { realtimeRoutes } from './realtime.ts';
-import { startTelegram, telegramStatus } from './telegram.ts';
+import { setupWebhook, startTelegram, telegramStatus } from './telegram.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -70,15 +70,48 @@ app.get('/api/health', async () => ({
   telegram: telegramStatus(),
 }));
 
+app.get('/api/telegram-setup', async (req, reply) => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+  if (!token) {
+    return reply.code(400).send({ ok: false, error: 'TELEGRAM_BOT_TOKEN muhit o\'zgaruvchisi kiritilmagan.' });
+  }
+
+  const host = req.headers.host || 'localhost:3000';
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const webhookUrl = process.env.APP_URL
+    ? `${process.env.APP_URL.replace(/\/+$/, '')}/api/telegram`
+    : `${proto}://${host}/api/telegram`;
+
+  try {
+    await setupWebhook(token, webhookUrl, secret || 'psklub-secret');
+    return {
+      ok: true,
+      message: 'Telegram webhook va buyruqlar muvaffaqiyatli sozlandi.',
+      webhookUrl,
+    };
+  } catch (err) {
+    return reply.code(500).send({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Kutilmagan xatolik.',
+    });
+  }
+});
+
 // PIN oynasi uchun — foydalanuvchilar ro'yxati ochiq, PIN esa yopiq.
-app.get('/api/auth/users', async () => {
-  const club = await prisma.club.findFirst();
+app.get('/api/auth/users', async (req) => {
+  const clubId = (req.query as { clubId?: string })?.clubId;
+  const club = clubId
+    ? await prisma.club.findUnique({ where: { id: clubId } })
+    : await prisma.club.findFirst();
+  if (!club) return { club: null, users: [] };
   const users = await prisma.appUser.findMany({
-    where: { isActive: true },
+    where: { clubId: club.id, isActive: true },
     select: { id: true, fullName: true, role: true },
     orderBy: { fullName: 'asc' },
   });
-  return { club: club?.name ?? null, users };
+  return { club: club.name, users };
 });
 
 const loginBody = z.object({

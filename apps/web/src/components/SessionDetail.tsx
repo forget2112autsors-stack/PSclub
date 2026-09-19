@@ -8,6 +8,7 @@ import { Field, Modal, inputClass } from './Modal.tsx';
 interface Detail {
   id: string;
   status: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'CANCELLED';
+  cancelReason?: string | null;
   startedAt: string;
   station: { id: string; number: number; type: string };
   customer: { id: string; fullName: string; balance: number } | null;
@@ -47,6 +48,13 @@ interface Product {
   isQuickKey: boolean;
 }
 
+interface MapStation {
+  id: string;
+  number: number;
+  type: string;
+  status: 'FREE' | 'BUSY' | 'OUT_OF_SERVICE';
+}
+
 const summa = (v: number) => v.toLocaleString('uz-UZ');
 
 export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
@@ -55,8 +63,14 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   const [closing, setClosing] = useState(false);
   const [cash, setCash] = useState('');
   const [card, setCard] = useState('');
+  const [balance, setBalance] = useState('');
+  const [discount, setDiscount] = useState('');
   const [returned, setReturned] = useState('');
   const [shares, setShares] = useState(0);
+  const [moving, setMoving] = useState(false);
+  const [moveTarget, setMoveTarget] = useState('');
+  const [canceling, setCanceling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const manager = isManager(useAuth((s) => s.user));
 
   const detail = useQuery({
@@ -65,6 +79,11 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
     refetchInterval: 15_000,
   });
   const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
+  const mapQuery = useQuery({
+    queryKey: ['map'],
+    queryFn: () => api<{ stations: MapStation[] }>('/api/map'),
+    enabled: moving,
+  });
 
   const splitQuery = useQuery({
     queryKey: ['split', sessionId, shares],
@@ -102,6 +121,46 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
     onError,
   });
 
+  const move = useMutation({
+    mutationFn: () =>
+      api(`/api/sessions/${sessionId}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ stationId: moveTarget }),
+      }),
+    onSuccess: () => {
+      setMoving(false);
+      setError(null);
+      refresh();
+    },
+    onError,
+  });
+
+  const cancel = useMutation({
+    mutationFn: () =>
+      api(`/api/sessions/${sessionId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: cancelReason }),
+      }),
+    onSuccess: () => {
+      setCanceling(false);
+      refresh();
+      onClose();
+    },
+    onError,
+  });
+
+  const restore = useMutation({
+    mutationFn: () =>
+      api(`/api/sessions/${sessionId}/restore`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      setError(null);
+      refresh();
+    },
+    onError,
+  });
+
   const addItem = useMutation({
     mutationFn: (productId: string) =>
       api(`/api/sessions/${sessionId}/items`, {
@@ -130,12 +189,14 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
       const payments = [
         { method: 'CASH' as const, amount: Number(cash) || 0 },
         { method: 'CARD' as const, amount: Number(card) || 0 },
+        { method: 'BALANCE' as const, amount: Number(balance) || 0 },
       ].filter((p) => p.amount > 0);
 
       return api(`/api/sessions/${sessionId}/close`, {
         method: 'POST',
         body: JSON.stringify({
           payments,
+          discount: Number(discount) || 0,
           gamepadsReturned: returned === '' ? null : Number(returned),
         }),
       });
@@ -276,7 +337,24 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </section>
           )}
 
-          {d.status !== 'CLOSED' && !closing && (
+          {d.status === 'CANCELLED' && (
+            <div className="rounded-xl border border-red-800/50 bg-red-950/40 p-4 text-sm text-red-200">
+              <p className="font-semibold">Seans bekor qilingan</p>
+              {d.cancelReason && <p className="mt-1 text-xs text-red-300">Sabab: {d.cancelReason}</p>}
+              {manager && (
+                <button
+                  type="button"
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate()}
+                  className="tap mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {restore.isPending ? 'Tiklanmoqda…' : 'Bekor qilingan seansni qayta tiklash'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {d.status !== 'CLOSED' && d.status !== 'CANCELLED' && !closing && !moving && !canceling && (
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -301,6 +379,24 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
                 </select>
               </label>
 
+              <button
+                type="button"
+                onClick={() => setMoving(true)}
+                className="tap rounded-lg bg-slate-800 px-4 py-2.5 text-sm transition hover:bg-slate-700"
+              >
+                Joyni ko'chirish
+              </button>
+
+              {manager && (
+                <button
+                  type="button"
+                  onClick={() => setCanceling(true)}
+                  className="tap rounded-lg border border-red-900/60 bg-red-950/60 px-4 py-2.5 text-sm text-red-300 transition hover:bg-red-900/80"
+                >
+                  Bekor qilish
+                </button>
+              )}
+
               {manager && d.totals.creditExceeded && (
                 <button
                   type="button"
@@ -314,6 +410,9 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
                 type="button"
                 onClick={() => {
                   setCash(String(due > 0 ? due : 0));
+                  setCard('0');
+                  setBalance('0');
+                  setDiscount('0');
                   setReturned(String(d.gamepads));
                   setClosing(true);
                 }}
@@ -324,11 +423,99 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </div>
           )}
 
+          {moving && (
+            <section className="space-y-3 rounded-xl bg-slate-950/60 p-4">
+              <h3 className="text-sm font-medium">Boshqa bo'sh joyga ko'chirish</h3>
+              {(mapQuery.data?.stations ?? []).filter((s) => s.status === 'FREE' && s.id !== d.station.id).length ===
+              0 ? (
+                <p className="text-xs text-amber-400">Ko'chirish uchun bo'sh joylar yo'q.</p>
+              ) : (
+                <Field label="Yangi joy">
+                  <select
+                    value={moveTarget}
+                    onChange={(e) => setMoveTarget(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Tanlang…</option>
+                    {(mapQuery.data?.stations ?? [])
+                      .filter((s) => s.status === 'FREE' && s.id !== d.station.id)
+                      .map((st) => (
+                        <option key={st.id} value={st.id} className="bg-slate-900">
+                          {st.number}-joy ({st.type})
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMoving(false)}
+                  className="tap rounded-lg bg-slate-800 px-4 py-2.5 text-sm transition hover:bg-slate-700"
+                >
+                  Orqaga
+                </button>
+                <button
+                  type="button"
+                  disabled={!moveTarget || move.isPending}
+                  onClick={() => move.mutate()}
+                  className="tap flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {move.isPending ? 'Ko\'chirilmoqda…' : 'Ko\'chirish'}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {canceling && (
+            <section className="space-y-3 rounded-xl border border-red-900/60 bg-red-950/40 p-4">
+              <h3 className="text-sm font-medium text-red-200">Seansni bekor qilish (Administrator)</h3>
+              <p className="text-xs text-slate-400">
+                Seans bekor qilinsa, bufet mahsulotlari omborga qaytariladi va qilingan to'lovlar qaytariladi.
+              </p>
+              <Field label="Bekor qilish sababi">
+                <input
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Masalan: Mijoz adashib ochildi, chiroq o'chdi..."
+                  className={inputClass}
+                />
+              </Field>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCanceling(false)}
+                  className="tap rounded-lg bg-slate-800 px-4 py-2.5 text-sm transition hover:bg-slate-700"
+                >
+                  Orqaga
+                </button>
+                <button
+                  type="button"
+                  disabled={!cancelReason.trim() || cancel.isPending}
+                  onClick={() => cancel.mutate()}
+                  className="tap flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-50"
+                >
+                  {cancel.isPending ? 'Bekor qilinmoqda…' : 'Bekor qilishni tasdiqlash'}
+                </button>
+              </div>
+            </section>
+          )}
+
           {closing && (
             <section className="space-y-3 rounded-xl bg-slate-950/60 p-4">
-              <p className="text-sm">
-                To'lanishi kerak: <span className="font-medium text-emerald-400">{summa(due)}</span> so'm
-              </p>
+              <div className="flex items-center justify-between text-sm">
+                <span>
+                  To'lanishi kerak:{' '}
+                  <span className="font-medium text-emerald-400">
+                    {summa(Math.max(0, due - (Number(discount) || 0)))}
+                  </span>{' '}
+                  so'm
+                </span>
+                {(Number(discount) || 0) > 0 && (
+                  <span className="text-xs text-amber-400">Chegirma: {summa(Number(discount) || 0)} so'm</span>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Naqd">
                   <input
@@ -347,14 +534,60 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
                   />
                 </Field>
               </div>
-              <Field label={`Qaytarilgan pult (berilgan: ${d.gamepads})`}>
-                <input
-                  value={returned}
-                  onChange={(e) => setReturned(e.target.value.replace(/\D/g, ''))}
-                  inputMode="numeric"
-                  className={inputClass}
-                />
-              </Field>
+
+              {d.customer && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>
+                      Mijoz balansi: <strong className="text-slate-200">{summa(d.customer.balance)} so'm</strong>
+                    </span>
+                    {d.customer.balance > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const need = Math.max(0, due - (Number(discount) || 0));
+                          const canPay = Math.min(d.customer!.balance, need);
+                          setBalance(String(canPay));
+                          const remaining = need - canPay;
+                          setCash(String(remaining));
+                          setCard('0');
+                        }}
+                        className="text-emerald-400 underline hover:text-emerald-300"
+                      >
+                        Balansdan to'lash
+                      </button>
+                    )}
+                  </div>
+                  <Field label="Balansdan to'lov">
+                    <input
+                      value={balance}
+                      onChange={(e) => setBalance(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Chegirma (so'm)">
+                  <input
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value.replace(/\D/g, ''))}
+                    inputMode="numeric"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label={`Qaytarilgan pult (berilgan: ${d.gamepads})`}>
+                  <input
+                    value={returned}
+                    onChange={(e) => setReturned(e.target.value.replace(/\D/g, ''))}
+                    inputMode="numeric"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
               <div className="flex gap-2">
                 <button
                   type="button"

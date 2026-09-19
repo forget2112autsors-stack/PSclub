@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getToken } from './api.ts';
 
 /**
  * Yangilanishni kuzatish.
@@ -26,8 +27,14 @@ export function useRealtime(onRefresh: () => void): { connected: boolean } {
 
     const tekshir = async () => {
       if (document.hidden) return;
+      const token = getToken();
+      if (!token) return;
+
       try {
-        const r = await fetch('/api/revision', { cache: 'no-store' });
+        const r = await fetch('/api/revision', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
         if (toxtatilgan) return;
         setConnected(r.ok);
         if (!r.ok) return;

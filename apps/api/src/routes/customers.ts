@@ -6,7 +6,9 @@ import { fail } from '../errors.ts';
 import { requireAuth, requireManager } from '../auth.ts';
 import { broadcast } from '../realtime.ts';
 import {
+  addCustomerPackage,
   cancelBooking,
+  convertBonusToBalance,
   createBooking,
   customerSummary,
   expireStaleBookings,
@@ -85,6 +87,46 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
       amount: body.amount,
       method: body.method,
       shiftId: shift.id,
+      userId: req.user.sub,
+    });
+  });
+
+  app.post('/api/customers/:id/packages', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(1),
+        totalMinutes: z.number().int().min(1),
+        amount: z.number().int().min(0),
+        method: z.enum(['CASH', 'CARD', 'ONLINE']).default('CASH'),
+        daysValid: z.number().int().min(1).nullable().optional(),
+        tariffId: z.string().nullable().optional(),
+      })
+      .parse(req.body);
+
+    const shift = await prisma.shift.findFirst({ where: { clubId: req.user.clubId, status: 'OPEN' } });
+    if (!shift) fail('Smena ochilmagan.');
+
+    return addCustomerPackage({
+      customerId: id,
+      name: body.name,
+      totalMinutes: body.totalMinutes,
+      amount: body.amount,
+      method: body.method,
+      daysValid: body.daysValid,
+      tariffId: body.tariffId,
+      shiftId: shift.id,
+      userId: req.user.sub,
+    });
+  });
+
+  app.post('/api/customers/:id/use-bonus', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = z.object({ points: z.number().int().min(1) }).parse(req.body);
+
+    return convertBonusToBalance({
+      customerId: id,
+      points: body.points,
       userId: req.user.sub,
     });
   });

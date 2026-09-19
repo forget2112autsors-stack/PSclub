@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { isManager, useAuth } from '../store/auth.ts';
@@ -27,8 +27,23 @@ export function Shell() {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
   const navigate = useNavigate();
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  );
 
   const items = NAV.filter((item) => !item.managerOnly || isManager(user));
+
+  // QM-7. Aloqa uzilishini bildirish va tiklanganda avtomatik qayta ulanish
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   // Klaviatura yorliqlari — TZ 8-bo'lim (tez ishlash uchun).
   useEffect(() => {
@@ -79,9 +94,19 @@ export function Shell() {
         </button>
       </nav>
 
-      <main className="flex-1 overflow-x-hidden p-6">
-        <Outlet />
-      </main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {!isOnline && (
+          <div
+            role="alert"
+            className="bg-red-600 px-4 py-2 text-center text-xs font-medium text-white shadow-md"
+          >
+            ⚠ Internet aloqasi yo'q! Kiritilgan amallar saqlanmasligi mumkin. Aloqa tiklanishi kutilmoqda…
+          </div>
+        )}
+        <main className="flex-1 overflow-x-hidden p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

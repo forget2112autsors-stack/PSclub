@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 
 import { prisma } from './db.ts';
+import { requireAuth } from './auth.ts';
 
 const clients = new Set<ServerResponse>();
 
@@ -25,6 +26,8 @@ export function broadcast(event = 'refresh'): void {
 }
 
 export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('onRequest', requireAuth);
+
   /**
    * O'zgarish belgisi — mijoz shuni kuzatib turadi.
    *
@@ -33,10 +36,17 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
    * Bitta indeksli so'rov — xaritani har safar to'liq qayta yuklashdan
    * ancha arzon.
    */
-  app.get('/api/revision', async () => {
+  app.get('/api/revision', async (req) => {
+    const clubId = req.user.clubId;
     const [oxirgi, ochiq] = await Promise.all([
-      prisma.auditLog.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
-      prisma.session.count({ where: { status: { in: ['ACTIVE', 'PAUSED'] } } }),
+      prisma.auditLog.findFirst({
+        where: { user: { clubId } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+      prisma.session.count({
+        where: { station: { clubId }, status: { in: ['ACTIVE', 'PAUSED'] } },
+      }),
     ]);
     return { rev: `${oxirgi?.createdAt.getTime() ?? 0}:${ochiq}` };
   });

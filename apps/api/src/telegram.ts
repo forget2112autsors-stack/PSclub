@@ -172,7 +172,20 @@ export async function buildBot(token: string | undefined, dailyHour: number): Pr
   });
 
   bot.callbackQuery('kim:xodim', async (ctx) => {
-    await setAwaitingPin(String(ctx.chat?.id), true);
+    const chatId = String(ctx.chat?.id);
+    const holat = await prisma.botState.findUnique({ where: { chatId } });
+    if (holat && holat.failedPins >= MAX_PIN_ATTEMPTS) {
+      const elapsed = Date.now() - holat.updatedAt.getTime();
+      if (elapsed < 60 * 60_000) {
+        const minutesLeft = Math.ceil((60 * 60_000 - elapsed) / 60_000);
+        await ctx.answerCallbackQuery();
+        return ctx.reply(`Chat bloklangan. Iltimos, ${minutesLeft} daqiqadan keyin qayta urinib ko'ring.`);
+      }
+      // 1 soat o'tgan — urinishlarni nollaymiz
+      await prisma.botState.update({ where: { chatId }, data: { failedPins: 0, awaitingPin: true } });
+    } else {
+      await setAwaitingPin(chatId, true);
+    }
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
       'PIN-kodingizni yuboring.\nFaqat administrator va egasi ulana oladi.',
@@ -227,10 +240,16 @@ export async function buildBot(token: string | undefined, dailyHour: number): Pr
     // PIN kutilmayotgan bo'lsa — xabarni keyingi ishlovchiga uzatamiz.
     if (!holat?.awaitingPin) return next();
 
-    // PIN 4 xonali — cheksiz urinish berilsa uni topish oson bo'lib qoladi.
-    const urinish = holat.failedPins + 1;
-    if (urinish > MAX_PIN_ATTEMPTS) {
-      return ctx.reply('Juda ko\'p urinish. Bir soatdan keyin qayta urinib ko\'ring.');
+    // 1 soatlik blokirovka tekshiruvi
+    if (holat.failedPins >= MAX_PIN_ATTEMPTS) {
+      const elapsed = Date.now() - holat.updatedAt.getTime();
+      if (elapsed < 60 * 60_000) {
+        const minutesLeft = Math.ceil((60 * 60_000 - elapsed) / 60_000);
+        return ctx.reply(`Juda ko'p xato urinish. Iltimos, yana ${minutesLeft} daqiqadan keyin qayta urinib ko'ring.`);
+      }
+      // 1 soat o'tgan bo'lsa, qayta nollaymiz
+      await prisma.botState.update({ where: { chatId }, data: { failedPins: 0 } });
+      holat.failedPins = 0;
     }
 
     const pin = ctx.message.text.trim();
@@ -247,7 +266,14 @@ export async function buildBot(token: string | undefined, dailyHour: number): Pr
       }
     }
 
-    if (!matched) return ctx.reply('PIN-kod noto\'g\'ri.');
+    if (!matched) {
+      const nextFailed = holat.failedPins + 1;
+      await prisma.botState.update({ where: { chatId }, data: { failedPins: nextFailed } });
+      if (nextFailed >= MAX_PIN_ATTEMPTS) {
+        return ctx.reply('PIN-kod 5 marta noto\'g\'ri kiritildi. Chat xavfsizlik uchun 1 soatga bloklandi.');
+      }
+      return ctx.reply(`PIN-kod noto'g'ri. Qolgan urinishlar soni: ${MAX_PIN_ATTEMPTS - nextFailed} ta.`);
+    }
 
     await prisma.appUser.update({ where: { id: matched.id }, data: { telegramChatId: chatId } });
     await prisma.botState.delete({ where: { chatId } }).catch(() => {});
@@ -444,7 +470,7 @@ async function tarixKorsat(ctx: Ctx): Promise<void> {
   await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
 }
 
-async function bronTanlash(ctx: Ctx): Promise<void> {
+async function bronJoylarKorsat(ctx: Ctx, edit = false): Promise<void> {
   const customer = await customerOf(String(ctx.from?.id));
   if (!customer) {
     await ctx.reply('Avval /start orqali ro\'yxatdan o\'ting.');
@@ -456,35 +482,53 @@ async function bronTanlash(ctx: Ctx): Promise<void> {
   }
 
   const c = await club();
-  const now = new Date();
-  const taken = await prisma.booking.findMany({
-    where: { station: { clubId: c.id }, status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gte: now } },
-    select: { startsAt: true },
+  const stations = await prisma.station.findMany({
+    where: { clubId: c.id, status: { not: 'OUT_OF_SERVICE' } },
+    include: { type: true },
+    orderBy: [{ sortOrder: 'asc' }, { number: 'asc' }],
   });
 
-  const slots = freeSlots({
-    openMinute: 9 * 60,
-    closeMinute: 23 * 60,
-    now,
-    tzOffsetMinutes: c.tzOffsetMinutes,
-    taken: taken.map((t) => t.startsAt),
-  }).slice(0, 8);
-
-  if (slots.length === 0) {
-    await ctx.reply('Bugun uchun bo\'sh vaqt qolmadi.');
+  if (stations.length === 0) {
+    const text = 'Hozirda bron qilish uchun joylar mavjud emas.';
+    if (edit) await ctx.editMessageText(text);
+    else await ctx.reply(text);
     return;
   }
 
-  await ctx.reply('Qaysi vaqtga bron qilamiz?', {
-    reply_markup: {
-      inline_keyboard: slots.map((s) => [
-        {
-          text: `${kun(s, c.tzOffsetMinutes)} ${soat(s, c.tzOffsetMinutes)}`,
-          callback_data: `bron:${s.toISOString()}`,
-        },
-      ]),
-    },
-  });
+  const keyboard: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < stations.length; i += 2) {
+    const row: { text: string; callback_data: string }[] = [];
+    const s1 = stations[i];
+    row.push({
+      text: `🎮 ${s1.number}-joy (${s1.name ?? s1.type.name})`,
+      callback_data: `bron:st:${s1.id}`,
+    });
+    if (i + 1 < stations.length) {
+      const s2 = stations[i + 1];
+      row.push({
+        text: `🎮 ${s2.number}-joy (${s2.name ?? s2.type.name})`,
+        callback_data: `bron:st:${s2.id}`,
+      });
+    }
+    keyboard.push(row);
+  }
+
+  const text = '🎮 <b>Bron qilish uchun joy yoki xonani tanlang:</b>\nPastdagi ro\'yxatdan o\'zingizga ma\'qul konsol yoki xonani tanlang:';
+  if (edit) {
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  } else {
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  }
+}
+
+async function bronTanlash(ctx: Ctx): Promise<void> {
+  return bronJoylarKorsat(ctx, false);
 }
 
 function registerCustomerFlow(instance: Bot): void {
@@ -532,26 +576,108 @@ function registerCustomerFlow(instance: Bot): void {
     );
   });
 
-  instance.callbackQuery(/^bron:/, async (ctx) => {
+  // 1. Joy yoki xona tanlanganda uning bo'sh vaqtlarini ko'rsatish
+  instance.callbackQuery(/^bron:st:/, async (ctx) => {
     const customer = await customerOf(String(ctx.from.id));
     if (!customer) {
       await ctx.answerCallbackQuery('Avval ro\'yxatdan o\'ting.');
       return;
     }
 
-    const startsAt = new Date(ctx.callbackQuery.data.slice('bron:'.length));
-    const c = await club();
-    const stations = await listStations(c.id);
-    const bosh = stations.find((s) => s.status === 'FREE');
-
-    if (!bosh) {
-      await ctx.answerCallbackQuery('Bo\'sh joy qolmadi.');
+    const stationId = ctx.callbackQuery.data.slice('bron:st:'.length);
+    const station = await prisma.station.findUnique({
+      where: { id: stationId },
+      include: { type: true },
+    });
+    if (!station) {
+      await ctx.answerCallbackQuery('Joy topilmadi.');
       return;
     }
 
+    const c = await club();
+    const now = new Date();
+    const taken = await prisma.booking.findMany({
+      where: {
+        stationId: station.id,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        startsAt: { gte: now },
+      },
+      select: { startsAt: true },
+    });
+
+    const slots = freeSlots({
+      openMinute: 9 * 60,
+      closeMinute: 23 * 60,
+      now,
+      tzOffsetMinutes: c.tzOffsetMinutes,
+      taken: taken.map((t) => t.startsAt),
+    }).slice(0, 10);
+
+    await ctx.answerCallbackQuery();
+
+    if (slots.length === 0) {
+      await ctx.editMessageText(
+        `🎮 <b>${station.number}-joy (${station.name ?? station.type.name})</b>\n\nUshbu joy uchun bugun bo'sh vaqt qolmadi. Boshqa joyni tanlab ko'ring.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{ text: '◀ Boshqa joyni tanlash', callback_data: 'bron:back' }]],
+          },
+        },
+      );
+      return;
+    }
+
+    const keyboard: { text: string; callback_data: string }[][] = [];
+    for (let i = 0; i < slots.length; i += 2) {
+      const row: { text: string; callback_data: string }[] = [];
+      const d1 = slots[i];
+      row.push({
+        text: `${kun(d1, c.tzOffsetMinutes)} ${soat(d1, c.tzOffsetMinutes)}`,
+        callback_data: `bron:dt:${station.id}:${d1.getTime()}`,
+      });
+      if (i + 1 < slots.length) {
+        const d2 = slots[i + 1];
+        row.push({
+          text: `${kun(d2, c.tzOffsetMinutes)} ${soat(d2, c.tzOffsetMinutes)}`,
+          callback_data: `bron:dt:${station.id}:${d2.getTime()}`,
+        });
+      }
+      keyboard.push(row);
+    }
+    keyboard.push([{ text: '◀ Boshqa joyni tanlash', callback_data: 'bron:back' }]);
+
+    await ctx.editMessageText(
+      `🎮 <b>${station.number}-joy (${station.name ?? station.type.name})</b>\n\nQaysi vaqtga bron qilmoqchisiz? Kerakli vaqtni tanlang:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: keyboard },
+      },
+    );
+  });
+
+  // 2. Orqaga (joylar ro'yxatiga) qaytish
+  instance.callbackQuery('bron:back', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await bronJoylarKorsat(ctx, true);
+  });
+
+  // 3. Vaqtni tanlash va bronni saqlash
+  instance.callbackQuery(/^bron:dt:/, async (ctx) => {
+    const customer = await customerOf(String(ctx.from.id));
+    if (!customer) {
+      await ctx.answerCallbackQuery('Avval ro\'yxatdan o\'ting.');
+      return;
+    }
+
+    const payload = ctx.callbackQuery.data.slice('bron:dt:'.length);
+    const [stationId, timestampStr] = payload.split(':');
+    const startsAt = new Date(Number(timestampStr));
+    const c = await club();
+
     try {
       const booking = await createBooking({
-        stationId: bosh.id,
+        stationId,
         customerId: customer.id,
         startsAt,
         note: 'Telegram orqali',
@@ -559,16 +685,17 @@ function registerCustomerFlow(instance: Bot): void {
       await ctx.answerCallbackQuery('Bron qabul qilindi');
       await ctx.editMessageText(
         [
-          '✅ <b>Bron qabul qilindi</b>',
-          `${kun(startsAt, c.tzOffsetMinutes)} soat ${soat(startsAt, c.tzOffsetMinutes)}`,
-          `${booking.station.number}-joy (${booking.station.type.name})`,
+          '✅ <b>Bron muvaffaqiyatli qabul qilindi!</b>',
           '',
-          'Eslatma: 15 daqiqa kechiksangiz bron bekor bo\'ladi.',
+          `🎮 Joy: <b>${booking.station.number}-joy (${booking.station.name ?? booking.station.type.name})</b>`,
+          `📅 Vaqt: <b>${kun(startsAt, c.tzOffsetMinutes)} soat ${soat(startsAt, c.tzOffsetMinutes)}</b>`,
+          '',
+          '⚠ <i>Eslatma: 15 daqiqa kechiksangiz bron bekor bo\'ladi.</i>',
         ].join('\n'),
         { parse_mode: 'HTML' },
       );
       void notifyOwner(
-        `📅 <b>Yangi bron</b>\n${customer.fullName} · ${booking.station.number}-joy\n${kun(startsAt, c.tzOffsetMinutes)} ${soat(startsAt, c.tzOffsetMinutes)}`,
+        `📅 <b>Yangi bron</b>\n${customer.fullName} · ${booking.station.number}-joy (${booking.station.name ?? booking.station.type.name})\n${kun(startsAt, c.tzOffsetMinutes)} ${soat(startsAt, c.tzOffsetMinutes)}`,
       );
     } catch (err) {
       await ctx.answerCallbackQuery(err instanceof Error ? err.message.slice(0, 190) : 'Bron qilinmadi');

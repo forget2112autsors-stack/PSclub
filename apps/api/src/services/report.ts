@@ -40,7 +40,11 @@ export async function dailyReport(clubId: string, date: string) {
       },
     }),
     prisma.orderItem.findMany({
-      where: { createdAt: range, shift: { clubId } },
+      where: {
+        createdAt: range,
+        shift: { clubId },
+        OR: [{ sessionId: null }, { session: { status: 'CLOSED' } }],
+      },
       select: {
         qty: true,
         amount: true,
@@ -114,7 +118,7 @@ export async function dailyReport(clubId: string, date: string) {
     itemsRevenue,
     quickSales,
     discounts,
-    totalRevenue: gameRevenue + itemsRevenue + quickSales,
+    totalRevenue: Math.max(0, gameRevenue + itemsRevenue + quickSales - discounts),
     totalPaid,
     totalExpenses,
     net: totalPaid - totalExpenses,

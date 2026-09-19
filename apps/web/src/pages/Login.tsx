@@ -67,7 +67,7 @@ export function Login() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [selected, pin, busy]);
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-950 p-4 text-slate-100">

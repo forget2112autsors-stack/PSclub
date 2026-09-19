@@ -190,7 +190,7 @@ export async function createBooking(input: {
       note: input.note ?? null,
       status: 'CONFIRMED',
     },
-    include: { station: { select: { number: true, type: { select: { name: true } } } } },
+    include: { station: { select: { number: true, name: true, type: { select: { name: true } } } } },
   });
 
   await audit({
@@ -217,4 +217,118 @@ export async function cancelBooking(bookingId: string, userId?: string) {
     action: 'cancel',
     oldValue: booking,
   });
+}
+
+// ------------------------------------------------------------- Paketlar va Bonus ---
+
+export async function addCustomerPackage(input: {
+  customerId: string;
+  name: string;
+  totalMinutes: number;
+  tariffId?: string | null;
+  daysValid?: number | null;
+  amount: number;
+  method: 'CASH' | 'CARD' | 'ONLINE';
+  shiftId: string;
+  userId: string;
+}) {
+  if (input.totalMinutes <= 0) fail('Daqiqalar soni noldan katta bo\'lishi kerak.');
+  if (input.amount < 0) fail('Summa manfiy bo\'lishi mumkin emas.');
+
+  const customer = await prisma.customer.findUniqueOrThrow({ where: { id: input.customerId } });
+  if (customer.isBlocked) fail('Mijoz qora ro\'yxatda — paket sotib bo\'lmaydi.');
+
+  const expiresAt =
+    input.daysValid && input.daysValid > 0
+      ? new Date(Date.now() + input.daysValid * 24 * 60 * 60_000)
+      : null;
+
+  const [pkg] = await prisma.$transaction(async (tx) => {
+    const createdPkg = await tx.customerPackage.create({
+      data: {
+        customerId: customer.id,
+        tariffId: input.tariffId ?? null,
+        name: input.name.trim(),
+        totalMinutes: input.totalMinutes,
+        remainingMinutes: input.totalMinutes,
+        expiresAt,
+      },
+    });
+
+    if (input.amount > 0) {
+      await tx.payment.create({
+        data: {
+          shiftId: input.shiftId,
+          customerId: customer.id,
+          operatorId: input.userId,
+          method: input.method,
+          amount: input.amount,
+          note: `Abonement: ${input.name.trim()}`,
+        },
+      });
+    }
+
+    return [createdPkg];
+  });
+
+  await audit({
+    userId: input.userId,
+    entity: 'CustomerPackage',
+    entityId: pkg.id,
+    action: 'create',
+    newValue: {
+      customer: customer.fullName,
+      name: input.name,
+      totalMinutes: input.totalMinutes,
+      amount: input.amount,
+    },
+  });
+
+  return pkg;
+}
+
+export async function convertBonusToBalance(input: {
+  customerId: string;
+  points: number;
+  userId: string;
+}) {
+  if (input.points <= 0) fail('Ballar soni noldan katta bo\'lishi kerak.');
+
+  const customer = await prisma.customer.findUniqueOrThrow({ where: { id: input.customerId } });
+  if (customer.isBlocked) fail('Mijoz qora ro\'yxatda.');
+  if (customer.bonusPoints < input.points) {
+    fail(`Bonus ballar yetarli emas: sizda ${customer.bonusPoints} ball bor.`);
+  }
+
+  const newBonus = customer.bonusPoints - input.points;
+  const newBalance = customer.balance + input.points;
+
+  await prisma.$transaction([
+    prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        bonusPoints: newBonus,
+        balance: newBalance,
+      },
+    }),
+    prisma.customerBalanceTx.create({
+      data: {
+        customerId: customer.id,
+        amount: input.points,
+        balanceAfter: newBalance,
+        reason: `Bonus almashtirildi (${input.points} ball)`,
+        createdBy: input.userId,
+      },
+    }),
+  ]);
+
+  await audit({
+    userId: input.userId,
+    entity: 'Customer',
+    entityId: customer.id,
+    action: 'bonus_convert',
+    newValue: { points: input.points, balanceAfter: newBalance, remainingBonus: newBonus },
+  });
+
+  return { balance: newBalance, bonusPoints: newBonus };
 }

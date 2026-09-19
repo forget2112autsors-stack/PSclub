@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, ApiError } from '../lib/api.ts';
 import { Field, Modal, inputClass } from './Modal.tsx';
+import { isManager, useAuth } from '../store/auth.ts';
 
 interface Tariff {
   id: string;
@@ -28,10 +29,13 @@ interface Props {
 
 export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }: Props) {
   const client = useQueryClient();
+  const user = useAuth((s) => s.user);
+  const isMgr = isManager(user);
   const [mode, setMode] = useState<'PREPAID' | 'POSTPAID'>('POSTPAID');
   const [gamepads, setGamepads] = useState(2);
   const [minutes, setMinutes] = useState('60');
   const [packageId, setPackageId] = useState('');
+  const [startedAtStr, setStartedAtStr] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState('');
@@ -42,6 +46,15 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
     queryFn: () => api<Customer[]>(`/api/customers?q=${encodeURIComponent(qidiruv)}`),
   });
   const tanlangan = (customers.data ?? []).find((c) => c.id === customerId) ?? null;
+
+  const customerDetail = useQuery({
+    queryKey: ['customer-open-detail', customerId],
+    queryFn: () =>
+      api<{ packages: { id: string; name: string; remainingMinutes: number; expiresAt: string | null }[] }>(
+        `/api/customers/${customerId}`,
+      ),
+    enabled: !!customerId,
+  });
 
   const tariffs = useQuery({ queryKey: ['tariffs'], queryFn: () => api<Tariff[]>('/api/tariffs') });
   const packages = (tariffs.data ?? []).filter((t) => t.kind === 'PACKAGE');
@@ -58,6 +71,7 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
           customerId: customerId || null,
           prepaidMinutes: mode === 'PREPAID' ? Number(minutes) || null : null,
           note: note.trim() || null,
+          startedAt: startedAtStr ? new Date(startedAtStr).toISOString() : undefined,
         }),
       }),
     onSuccess: () => {
@@ -136,20 +150,35 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
           </span>
 
           {tanlangan ? (
-            <div className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2.5 text-sm">
-              <span>
-                {tanlangan.fullName}
-                <span className={`ml-2 text-xs ${tanlangan.balance < 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                  balans {tanlangan.balance.toLocaleString('uz-UZ')}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2.5 text-sm">
+                <span>
+                  {tanlangan.fullName}
+                  <span className={`ml-2 text-xs ${tanlangan.balance < 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                    balans {tanlangan.balance.toLocaleString('uz-UZ')}
+                  </span>
                 </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setCustomerId('')}
-                className="text-xs text-slate-400 hover:text-slate-200"
-              >
-                bekor qilish
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomerId('')}
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  bekor qilish
+                </button>
+              </div>
+
+              {customerDetail.data?.packages && customerDetail.data.packages.length > 0 && (
+                <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/40 p-2.5 text-xs text-emerald-300">
+                  <p className="mb-1 font-semibold">Mijozning faol abonement paketlari:</p>
+                  <ul className="space-y-0.5">
+                    {customerDetail.data.packages.map((p) => (
+                      <li key={p.id}>
+                        • {p.name}: {Math.floor(p.remainingMinutes / 60)} soat {p.remainingMinutes % 60} daq qoldi
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -192,6 +221,17 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
             Mijoz tanlanmasa seans mehmon nomiga ochiladi va qarz bilan yopib bo'lmaydi —
             yopishda to'liq to'lov olinadi.
           </p>
+        )}
+
+        {isMgr && (
+          <Field label="O'tgan vaqt bilan kiritish (ixtiyoriy — masalan, aloqa uzilgandagi seans)">
+            <input
+              type="datetime-local"
+              value={startedAtStr}
+              onChange={(e) => setStartedAtStr(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
         )}
 
         <Field label="Izoh (ixtiyoriy)">
