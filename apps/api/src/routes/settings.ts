@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { weightedCost } from '@psklub/domain';
 
 import { prisma, audit } from '../db.ts';
-import { requireAuth, requireManager } from '../auth.ts';
+import { requireAuth, requireManager, hashPin } from '../auth.ts';
+import { fail } from '../errors.ts';
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -294,6 +295,29 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
+  app.delete('/api/products/:id', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const { id } = idParam.parse(req.params);
+
+    const before = await prisma.product.findUnique({ where: { id } });
+    if (!before || before.clubId !== req.user.clubId) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+
+    const [orderItemsCount, movementsCount] = await Promise.all([
+      prisma.orderItem.count({ where: { productId: id } }),
+      prisma.stockMovement.count({ where: { productId: id } }),
+    ]);
+
+    if (orderItemsCount > 0 || movementsCount > 0) {
+      const updated = await prisma.product.update({ where: { id }, data: { isActive: false } });
+      await audit({ userId: req.user.sub, entity: 'Product', entityId: id, action: 'archive', oldValue: before, isCritical: true });
+      return { archived: true, message: 'Mahsulot bo\'yicha operatsiyalar mavjudligi sababli arxivlandi.' };
+    }
+
+    await prisma.product.delete({ where: { id } });
+    await audit({ userId: req.user.sub, entity: 'Product', entityId: id, action: 'delete', oldValue: before, isCritical: true });
+    return { ok: true };
+  });
+
   // Ombor kirimi — TZ M3.3.
   app.post('/api/stock/in', async (req, reply) => {
     if (!requireManager(req, reply)) return;
@@ -402,6 +426,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     const query = z
       .object({
         productId: z.string().optional(),
+        type: z.enum(['IN', 'SALE', 'INVENTORY', 'WRITE_OFF']).optional(),
         limit: z.coerce.number().int().min(1).max(500).default(100),
       })
       .parse(req.query ?? {});
@@ -410,6 +435,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       where: {
         product: { clubId: req.user.clubId },
         ...(query.productId ? { productId: query.productId } : {}),
+        ...(query.type ? { type: query.type } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: query.limit,
@@ -483,6 +509,149 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return { product: updated, diff };
+  });
+
+  // ----------------------------------------------------------- Xodimlar (Staff) --
+
+  app.get('/api/staff', async (req) => {
+    return prisma.appUser.findMany({
+      where: { clubId: req.user.clubId },
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        telegramChatId: true,
+        createdAt: true,
+      },
+      orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
+    });
+  });
+
+  app.post('/api/staff', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = z
+      .object({
+        fullName: z.string().min(1),
+        role: z.enum(['OPERATOR', 'ADMIN']),
+        pin: z.string().min(4).max(8),
+      })
+      .parse(req.body);
+
+    const pinHash = await hashPin(body.pin);
+    const created = await prisma.appUser.create({
+      data: {
+        clubId: req.user.clubId,
+        fullName: body.fullName.trim(),
+        role: body.role,
+        pinHash,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        telegramChatId: true,
+        createdAt: true,
+      },
+    });
+
+    await audit({
+      userId: req.user.sub,
+      entity: 'AppUser',
+      entityId: created.id,
+      action: 'create',
+      newValue: { fullName: created.fullName, role: created.role },
+      isCritical: true,
+    });
+
+    return created;
+  });
+
+  app.patch('/api/staff/:id', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        fullName: z.string().min(1).optional(),
+        role: z.enum(['OPERATOR', 'ADMIN']).optional(),
+        pin: z.string().min(4).max(8).optional(),
+        isActive: z.boolean().optional(),
+      })
+      .parse(req.body);
+
+    const before = await prisma.appUser.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!before) return reply.code(404).send({ error: 'Xodim topilmadi.' });
+
+    const data: any = {};
+    if (body.fullName) data.fullName = body.fullName.trim();
+    if (body.role) data.role = body.role;
+    if (body.isActive !== undefined) data.isActive = body.isActive;
+    if (body.pin) data.pinHash = await hashPin(body.pin);
+
+    const updated = await prisma.appUser.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        telegramChatId: true,
+        createdAt: true,
+      },
+    });
+
+    await audit({
+      userId: req.user.sub,
+      entity: 'AppUser',
+      entityId: id,
+      action: 'update',
+      oldValue: { fullName: before.fullName, role: before.role, isActive: before.isActive },
+      newValue: { fullName: updated.fullName, role: updated.role, isActive: updated.isActive },
+      isCritical: true,
+    });
+
+    return updated;
+  });
+
+  app.delete('/api/staff/:id', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const { id } = idParam.parse(req.params);
+    if (id === req.user.sub) fail('O\'zingizni o\'chira olmaysiz.');
+
+    const before = await prisma.appUser.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!before) return reply.code(404).send({ error: 'Xodim topilmadi.' });
+
+    const [shiftsCount, sessionsCount, expensesCount] = await Promise.all([
+      prisma.shift.count({ where: { operatorId: id } }),
+      prisma.session.count({ where: { operatorId: id } }),
+      prisma.expense.count({ where: { operatorId: id } }),
+    ]);
+
+    if (shiftsCount > 0 || sessionsCount > 0 || expensesCount > 0) {
+      await prisma.appUser.update({ where: { id }, data: { isActive: false } });
+      await audit({
+        userId: req.user.sub,
+        entity: 'AppUser',
+        entityId: id,
+        action: 'archive',
+        oldValue: before,
+        isCritical: true,
+      });
+      return { archived: true, message: 'Xodim faoliyat olib borgani uchun nofaol qilindi (arxivlandi).' };
+    }
+
+    await prisma.appUser.delete({ where: { id } });
+    await audit({
+      userId: req.user.sub,
+      entity: 'AppUser',
+      entityId: id,
+      action: 'delete',
+      oldValue: before,
+      isCritical: true,
+    });
+    return { ok: true };
   });
 }
 

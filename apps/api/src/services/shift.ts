@@ -40,13 +40,18 @@ export async function openShift(clubId: string, operatorId: string, openingCash:
 export async function shiftSummary(shiftId: string) {
   const shift = await prisma.shift.findUniqueOrThrow({ where: { id: shiftId } });
 
-  const [payments, expenses, openSessions, sessions, gamepadRows] = await Promise.all([
+  const [payments, expenses, expenseList, openSessions, sessions, gamepadRows] = await Promise.all([
     prisma.payment.groupBy({
       by: ['method'],
       where: { shiftId },
       _sum: { amount: true },
     }),
     prisma.expense.aggregate({ where: { shiftId }, _sum: { amount: true } }),
+    prisma.expense.findMany({
+      where: { shiftId },
+      orderBy: { createdAt: 'desc' },
+      include: { operator: { select: { fullName: true } } },
+    }),
     prisma.session.count({ where: { shiftId, status: { in: ['ACTIVE', 'PAUSED'] } } }),
     prisma.session.count({ where: { shiftId } }),
     // Pult sverkasi — TZ M1.4. Pult klubdagi eng ko'p yo'qotish manbai.
@@ -89,6 +94,14 @@ export async function shiftSummary(shiftId: string) {
     byMethod,
     cashPayments,
     cashExpenses,
+    expensesList: expenseList.map((e) => ({
+      id: e.id,
+      amount: e.amount,
+      category: e.category,
+      note: e.note,
+      createdAt: e.createdAt.toISOString(),
+      operatorName: e.operator.fullName,
+    })),
     openSessions,
     sessions,
     expectedCash: shift.openingCash + cashPayments - cashExpenses,
@@ -203,4 +216,57 @@ export async function addExpense(input: {
     newValue: input,
   });
   return expense;
+}
+
+export async function updateExpense(input: {
+  expenseId: string;
+  userId: string;
+  category?: string;
+  amount?: number;
+  note?: string | null;
+}) {
+  const expense = await prisma.expense.findUnique({ where: { id: input.expenseId }, include: { shift: true } });
+  if (!expense) fail('Chiqim topilmadi.');
+  if (expense.shift.status === 'CLOSED') fail('Yopilgan smena chiqimini o\'zgartirib bo\'lmaydi.');
+  if (input.amount !== undefined && input.amount <= 0) fail('Chiqim summasi noldan katta bo\'lishi kerak.');
+
+  const updated = await prisma.expense.update({
+    where: { id: input.expenseId },
+    data: {
+      ...(input.category ? { category: input.category } : {}),
+      ...(input.amount !== undefined ? { amount: input.amount } : {}),
+      ...(input.note !== undefined ? { note: input.note } : {}),
+    },
+  });
+
+  await audit({
+    userId: input.userId,
+    entity: 'Expense',
+    entityId: expense.id,
+    action: 'update',
+    oldValue: { amount: expense.amount, category: expense.category, note: expense.note },
+    newValue: { amount: updated.amount, category: updated.category, note: updated.note },
+    isCritical: true,
+  });
+
+  return updated;
+}
+
+export async function deleteExpense(input: { expenseId: string; userId: string }) {
+  const expense = await prisma.expense.findUnique({ where: { id: input.expenseId }, include: { shift: true } });
+  if (!expense) fail('Chiqim topilmadi.');
+  if (expense.shift.status === 'CLOSED') fail('Yopilgan smena chiqimini o\'chirib bo\'lmaydi.');
+
+  await prisma.expense.delete({ where: { id: input.expenseId } });
+
+  await audit({
+    userId: input.userId,
+    entity: 'Expense',
+    entityId: expense.id,
+    action: 'delete',
+    oldValue: { amount: expense.amount, category: expense.category, note: expense.note },
+    isCritical: true,
+  });
+
+  return { ok: true };
 }

@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { api, ApiError } from '../lib/api.ts';
 import { Field, Modal, inputClass } from '../components/Modal.tsx';
+import { isManager, useAuth } from '../store/auth.ts';
 
 interface StationType {
   id: string;
@@ -20,20 +21,48 @@ interface Station {
   type: { id: string; name: string };
 }
 
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  role: 'OPERATOR' | 'ADMIN' | 'OWNER';
+  isActive: boolean;
+  telegramChatId: string | null;
+  createdAt: string;
+}
+
 const STATUS_LABEL: Record<Station['status'], string> = {
   FREE: 'Bo\'sh',
   BUSY: 'Band',
   OUT_OF_SERVICE: 'Xizmatda emas',
 };
 
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Administrator',
+  OWNER: 'Egasi',
+  OPERATOR: 'Operator',
+};
+
 export function Settings() {
+  const user = useAuth((s) => s.user);
   const client = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<StationType | null>(null);
   const [editingStation, setEditingStation] = useState<Station | null>(null);
 
+  const [stationSearch, setStationSearch] = useState('');
+  const [stationTypeFilter, setStationTypeFilter] = useState('');
+  const [stationStatusFilter, setStationStatusFilter] = useState('all');
+
+  const [staffSearch, setStaffSearch] = useState('');
+  const [staffRoleFilter, setStaffRoleFilter] = useState('all');
+  const [staffStatusFilter, setStaffStatusFilter] = useState('all');
+  const [addingStaff, setAddingStaff] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
+
   const types = useQuery({ queryKey: ['station-types'], queryFn: () => api<StationType[]>('/api/station-types') });
   const stations = useQuery({ queryKey: ['stations'], queryFn: () => api<Station[]>('/api/stations') });
+  const staff = useQuery({ queryKey: ['staff'], queryFn: () => api<StaffMember[]>('/api/staff') });
 
   const [typeName, setTypeName] = useState('');
   const [stationNumber, setStationNumber] = useState('');
@@ -46,6 +75,7 @@ export function Settings() {
     void client.invalidateQueries({ queryKey: ['stations'] });
     void client.invalidateQueries({ queryKey: ['map'] });
   };
+  const refreshStaff = () => void client.invalidateQueries({ queryKey: ['staff'] });
 
   const addType = useMutation({
     mutationFn: (name: string) =>
@@ -67,6 +97,43 @@ export function Settings() {
       refreshStations();
     },
     onError,
+  });
+
+  const deleteStaff = useMutation({
+    mutationFn: (id: string) => api(`/api/staff/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setDeletingStaffId(null);
+      setError(null);
+      refreshStaff();
+    },
+    onError,
+  });
+
+  const filteredStations = (stations.data ?? []).filter((s) => {
+    if (stationSearch.trim()) {
+      const q = stationSearch.trim().toLowerCase();
+      const matchNum = String(s.number).includes(q);
+      const matchNote = s.note?.toLowerCase().includes(q);
+      const matchType = s.type.name.toLowerCase().includes(q);
+      if (!matchNum && !matchNote && !matchType) return false;
+    }
+    if (stationTypeFilter && s.type.id !== stationTypeFilter) return false;
+    if (stationStatusFilter !== 'all' && s.status !== stationStatusFilter) return false;
+    return true;
+  });
+
+  const filteredStaff = (staff.data ?? []).filter((s) => {
+    if (staffSearch.trim()) {
+      const q = staffSearch.trim().toLowerCase();
+      const matchName = s.fullName.toLowerCase().includes(q);
+      const matchTg = s.telegramChatId?.toLowerCase().includes(q);
+      const matchRole = ROLE_LABEL[s.role]?.toLowerCase().includes(q);
+      if (!matchName && !matchTg && !matchRole) return false;
+    }
+    if (staffRoleFilter !== 'all' && s.role !== staffRoleFilter) return false;
+    if (staffStatusFilter === 'active' && !s.isActive) return false;
+    if (staffStatusFilter === 'inactive' && s.isActive) return false;
+    return true;
   });
 
   return (
@@ -117,7 +184,42 @@ export function Settings() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Joylar</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 className="text-sm font-medium text-slate-300">Joylar</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={stationSearch}
+              onChange={(e) => setStationSearch(e.target.value)}
+              placeholder="Qidirish (raqam, izoh)..."
+              className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-44"
+            />
+            <select
+              value={stationTypeFilter}
+              onChange={(e) => setStationTypeFilter(e.target.value)}
+              aria-label="Joy turi filter"
+              className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="">Barcha turlar</option>
+              {types.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={stationStatusFilter}
+              onChange={(e) => setStationStatusFilter(e.target.value)}
+              aria-label="Joy holati filter"
+              className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="all">Barcha holatlar</option>
+              <option value="FREE">Bo'sh</option>
+              <option value="BUSY">Band</option>
+              <option value="OUT_OF_SERVICE">Xizmatda emas</option>
+            </select>
+          </div>
+        </div>
+
         <div className="mb-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-slate-400">
@@ -130,7 +232,7 @@ export function Settings() {
               </tr>
             </thead>
             <tbody>
-              {stations.data?.map((station) => (
+              {filteredStations.map((station) => (
                 <tr
                   key={station.id}
                   onClick={() => setEditingStation(station)}
@@ -149,8 +251,8 @@ export function Settings() {
               ))}
             </tbody>
           </table>
-          {stations.data?.length === 0 && <p className="text-sm text-slate-500">Hali qo'shilmagan.</p>}
-          {(stations.data?.length ?? 0) > 0 && (
+          {filteredStations.length === 0 && <p className="text-sm text-slate-500 py-3">Joylar topilmadi.</p>}
+          {filteredStations.length > 0 && (
             <p className="mt-2 text-xs text-slate-500">Tahrirlash uchun qatorni bosing.</p>
           )}
         </div>
@@ -196,6 +298,128 @@ export function Settings() {
         </form>
       </section>
 
+      {isManager(user) && (
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-medium text-slate-300">Xodimlar (Operatorlar va Adminlar)</h2>
+              <p className="text-xs text-slate-500">Tizimga kirish huquqiga ega xodimlar ro'yxati va ularni boshqarish.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAddingStaff(true)}
+              className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium transition hover:bg-emerald-500"
+            >
+              Xodim qo'shish
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <input
+              value={staffSearch}
+              onChange={(e) => setStaffSearch(e.target.value)}
+              placeholder="Qidirish (ism, rol)..."
+              className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[180px]"
+            />
+            <select
+              value={staffRoleFilter}
+              onChange={(e) => setStaffRoleFilter(e.target.value)}
+              aria-label="Rol bo'yicha filter"
+              className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="all">Barcha rollar</option>
+              <option value="OPERATOR">Operator</option>
+              <option value="ADMIN">Administrator</option>
+            </select>
+            <select
+              value={staffStatusFilter}
+              onChange={(e) => setStaffStatusFilter(e.target.value)}
+              aria-label="Status bo'yicha filter"
+              className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="all">Barcha holatlar</option>
+              <option value="active">Faol</option>
+              <option value="inactive">Nofaol / Arxiv</option>
+            </select>
+          </div>
+
+          <div className="mb-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-slate-400">
+                <tr>
+                  <th className="py-2">Ism-familiya</th>
+                  <th className="py-2">Roli</th>
+                  <th className="py-2">Telegram ID</th>
+                  <th className="py-2">Holati</th>
+                  <th className="py-2 text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStaff.map((st) => (
+                  <tr key={st.id} className="border-t border-slate-800">
+                    <td className="py-2.5 font-medium">{st.fullName}</td>
+                    <td className="py-2.5">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs font-medium ${
+                          st.role === 'ADMIN' || st.role === 'OWNER'
+                            ? 'bg-amber-950/60 text-amber-300'
+                            : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {ROLE_LABEL[st.role] ?? st.role}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-slate-400">{st.telegramChatId ? `@${st.telegramChatId}` : '—'}</td>
+                    <td className="py-2.5">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full mr-2 ${
+                          st.isActive ? 'bg-emerald-400' : 'bg-red-400'
+                        }`}
+                      />
+                      <span className={st.isActive ? 'text-slate-300' : 'text-slate-500'}>
+                        {st.isActive ? 'Faol' : 'Nofaol'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingStaff(st)}
+                          className="text-xs text-slate-400 hover:text-slate-200"
+                        >
+                          tahrirlash
+                        </button>
+                        {user?.sub !== st.id && (
+                          <button
+                            type="button"
+                            disabled={deleteStaff.isPending}
+                            onClick={() => {
+                              if (deletingStaffId === st.id) {
+                                deleteStaff.mutate(st.id);
+                              } else {
+                                setDeletingStaffId(st.id);
+                              }
+                            }}
+                            className={`text-xs transition ${
+                              deletingStaffId === st.id
+                                ? 'font-bold text-red-400'
+                                : 'text-slate-500 hover:text-red-400'
+                            }`}
+                          >
+                            {deletingStaffId === st.id ? 'aniqmi?' : 'o\'chirish'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredStaff.length === 0 && <p className="text-sm text-slate-500 py-3">Xodimlar topilmadi.</p>}
+          </div>
+        </section>
+      )}
+
       <p className="text-sm text-slate-400">Tariflar alohida bo'limda — chap menyudagi "Tariflar".</p>
 
       {editingType && (
@@ -212,6 +436,21 @@ export function Settings() {
           types={types.data ?? []}
           onClose={() => setEditingStation(null)}
           onDone={refreshStations}
+          onError={onError}
+        />
+      )}
+      {addingStaff && (
+        <AddStaffModal
+          onClose={() => setAddingStaff(false)}
+          onDone={refreshStaff}
+          onError={onError}
+        />
+      )}
+      {editingStaff && (
+        <EditStaffModal
+          staff={editingStaff}
+          onClose={() => setEditingStaff(null)}
+          onDone={refreshStaff}
           onError={onError}
         />
       )}
@@ -434,3 +673,214 @@ function StationEditor({
     </Modal>
   );
 }
+
+function AddStaffModal({
+  onClose,
+  onDone,
+  onError,
+}: {
+  onClose: () => void;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [form, setForm] = useState({
+    fullName: '',
+    role: 'OPERATOR' as 'OPERATOR' | 'ADMIN',
+    pin: '',
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<StaffMember>('/api/staff', {
+        method: 'POST',
+        body: JSON.stringify({
+          fullName: form.fullName.trim(),
+          role: form.role,
+          pin: form.pin.trim(),
+        }),
+      }),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title="Yangi xodim qo'shish" onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (form.fullName.trim() && form.pin.trim().length >= 4) save.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field label="Ism-familiya">
+          <input
+            value={form.fullName}
+            onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+            placeholder="Ali Valiyev"
+            className={inputClass}
+            required
+          />
+        </Field>
+
+        <Field label="Roli">
+          <select
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value as 'OPERATOR' | 'ADMIN' })}
+            className={inputClass}
+          >
+            <option value="OPERATOR">Operator</option>
+            <option value="ADMIN">Administrator</option>
+          </select>
+        </Field>
+
+        <Field label="PIN kod (4-8 ta raqam)">
+          <input
+            type="password"
+            value={form.pin}
+            onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 8) })}
+            placeholder="1234"
+            inputMode="numeric"
+            className={inputClass}
+            required
+            minLength={4}
+            maxLength={8}
+          />
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="tap rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            disabled={!form.fullName.trim() || form.pin.trim().length < 4 || save.isPending}
+            className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {save.isPending ? 'Saqlanmoqda…' : 'Qo\'shish'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditStaffModal({
+  staff,
+  onClose,
+  onDone,
+  onError,
+}: {
+  staff: StaffMember;
+  onClose: () => void;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [fullName, setFullName] = useState(staff.fullName);
+  const [role, setRole] = useState(staff.role);
+  const [pin, setPin] = useState('');
+  const [isActive, setIsActive] = useState(staff.isActive);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, unknown> = {
+        fullName: fullName.trim(),
+        role,
+        isActive,
+      };
+      if (pin.trim().length >= 4) {
+        payload.pin = pin.trim();
+      }
+      return api(`/api/staff/${staff.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title={`Xodimni tahrirlash: ${staff.fullName}`} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (fullName.trim()) save.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field label="Ism-familiya">
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className={inputClass}
+            required
+          />
+        </Field>
+
+        <Field label="Roli">
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as 'OPERATOR' | 'ADMIN' | 'OWNER')}
+            className={inputClass}
+            disabled={staff.role === 'OWNER'}
+          >
+            {staff.role === 'OWNER' && <option value="OWNER">Egasi</option>}
+            <option value="OPERATOR">Operator</option>
+            <option value="ADMIN">Administrator</option>
+          </select>
+        </Field>
+
+        <Field label="Yangi PIN kod (o'zgartirmaslik uchun bo'sh qoldiring)">
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+            placeholder="Yangi PIN (4-8 ta raqam)"
+            inputMode="numeric"
+            className={inputClass}
+            minLength={4}
+            maxLength={8}
+          />
+        </Field>
+
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            disabled={staff.role === 'OWNER'}
+          />
+          Xodim faol holatda (tizimga kirish huquqiga ega)
+        </label>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="tap rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            disabled={!fullName.trim() || save.isPending}
+            className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+

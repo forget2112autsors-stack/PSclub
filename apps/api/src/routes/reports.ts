@@ -131,10 +131,49 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/audit', async (req, reply) => {
     if (!requireManager(req, reply)) return;
+    const query = z
+      .object({
+        q: z.string().optional(),
+        entity: z.string().optional(),
+        action: z.string().optional(),
+        isCritical: z.enum(['true', 'false']).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(200),
+      })
+      .parse(req.query ?? {});
+
+    const where: any = {
+      OR: [
+        { user: { clubId: req.user.clubId } },
+        { userId: null },
+      ],
+    };
+
+    if (query.entity) {
+      where.entity = query.entity;
+    }
+    if (query.action) {
+      where.action = query.action;
+    }
+    if (query.isCritical !== undefined) {
+      where.isCritical = query.isCritical === 'true';
+    }
+    if (query.q) {
+      where.AND = [
+        {
+          OR: [
+            { entityId: { contains: query.q, mode: 'insensitive' } },
+            { user: { fullName: { contains: query.q, mode: 'insensitive' } } },
+          ],
+        },
+      ];
+    }
+
     return prisma.auditLog.findMany({
-      take: 200,
+      where,
+      take: query.limit,
       orderBy: { createdAt: 'desc' },
       include: { user: { select: { fullName: true } } },
     });
   });
 }
+

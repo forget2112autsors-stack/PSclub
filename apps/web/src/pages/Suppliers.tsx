@@ -39,15 +39,28 @@ const vaqt = (iso: string) =>
 export function Suppliers() {
   const client = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState('');
+  const [debtFilter, setDebtFilter] = useState<'all' | 'debt' | 'nodebt'>('all');
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<Supplier | null>(null);
 
-  const query = useQuery({ queryKey: ['suppliers'], queryFn: () => api<Supplier[]>('/api/suppliers') });
+  const query = useQuery({
+    queryKey: ['suppliers', q, debtFilter],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      if (debtFilter === 'debt') params.set('debtOnly', '1');
+      return api<Supplier[]>(`/api/suppliers?${params.toString()}`);
+    },
+  });
 
   const refresh = () => void client.invalidateQueries({ queryKey: ['suppliers'] });
   const onError = (err: unknown) => setError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik.');
 
-  const list = query.data ?? [];
+  let list = query.data ?? [];
+  if (debtFilter === 'nodebt') {
+    list = list.filter((s) => s.qarz <= 0);
+  }
   const jamiQarz = list.reduce((s, x) => s + Math.max(0, x.qarz), 0);
 
   return (
@@ -65,6 +78,24 @@ export function Suppliers() {
           Ta'minotchi qo'shish
         </button>
       </header>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Nomi yoki telefon bo'yicha qidirish…"
+          className={`${inputClass} max-w-xs`}
+        />
+        <select
+          value={debtFilter}
+          onChange={(e) => setDebtFilter(e.target.value as any)}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="all">Barcha ta'minotchilar</option>
+          <option value="debt">Faqat qarzimiz borlar</option>
+          <option value="nodebt">Qarzsizlar</option>
+        </select>
+      </div>
 
       {jamiQarz > 0 && (
         <p className="rounded-lg bg-amber-950/60 px-4 py-3 text-sm text-amber-300">
@@ -207,6 +238,8 @@ function SupplierDetail({
 }) {
   const client = useQueryClient();
   const [amount, setAmount] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const query = useQuery({
     queryKey: ['supplier', supplier.id],
@@ -224,6 +257,15 @@ function SupplierDetail({
       onDone();
       void client.invalidateQueries({ queryKey: ['supplier', supplier.id] });
       void client.invalidateQueries({ queryKey: ['shift'] });
+    },
+    onError,
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api(`/api/suppliers/${supplier.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      onDone();
+      onClose();
     },
     onError,
   });
@@ -315,8 +357,127 @@ function SupplierDetail({
               </ul>
             </section>
           )}
+
+          <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="tap rounded-lg bg-slate-800 px-4 py-2.5 text-sm text-slate-200 transition hover:bg-slate-700"
+            >
+              Tahrirlash
+            </button>
+            <button
+              type="button"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (confirmDelete) remove.mutate();
+                else setConfirmDelete(true);
+              }}
+              className={`tap rounded-lg px-4 py-2.5 text-sm transition ${
+                confirmDelete
+                  ? 'bg-red-700 text-white hover:bg-red-600'
+                  : 'bg-slate-800 text-red-400 hover:bg-slate-700'
+              }`}
+            >
+              {confirmDelete ? 'Aniqmi? O\'chirishni bosing' : 'O\'chirish'}
+            </button>
+          </div>
         </div>
       )}
+
+      {editing && (
+        <EditSupplierModal
+          supplier={d?.supplier ?? supplier}
+          onClose={() => setEditing(false)}
+          onUpdated={() => {
+            void query.refetch();
+            onDone();
+          }}
+          onError={onError}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function EditSupplierModal({
+  supplier,
+  onClose,
+  onUpdated,
+  onError,
+}: {
+  supplier: Supplier;
+  onClose: () => void;
+  onUpdated: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [name, setName] = useState(supplier.name);
+  const [phone, setPhone] = useState(supplier.phone ?? '');
+  const [note, setNote] = useState(supplier.note ?? '');
+
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/api/suppliers/${supplier.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: name.trim(), phone: phone.trim() || null, note: note.trim() || null }),
+      }),
+    onSuccess: () => {
+      onUpdated();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title={`Tahrirlash: ${supplier.name}`} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) save.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field label="Nomi / Kompaniya">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={inputClass}
+            required
+          />
+        </Field>
+        <Field label="Telefon raqami">
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className={inputClass}
+            placeholder="+998901234567"
+          />
+        </Field>
+        <Field label="Izoh">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className={inputClass}
+            placeholder="Ichimliklar yetkazib beruvchi..."
+          />
+        </Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="tap rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim() || save.isPending}
+            className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+          </button>
+        </div>
+      </form>
     </Modal>
   );
 }

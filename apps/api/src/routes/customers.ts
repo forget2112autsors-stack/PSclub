@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { prisma } from '../db.ts';
+import { prisma, audit } from '../db.ts';
 import { fail } from '../errors.ts';
 import { requireAuth, requireManager } from '../auth.ts';
 import { broadcast } from '../realtime.ts';
@@ -29,14 +29,36 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
   // ---------------------------------------------------------- Mijozlar -----
 
   app.get('/api/customers', async (req) => {
-    const q = (req.query as { q?: string })?.q?.trim() ?? '';
+    const query = req.query as { q?: string; balance?: string; status?: string };
+    const q = query?.q?.trim() ?? '';
+    const balance = query?.balance;
+    const status = query?.status;
+
+    let balanceWhere = {};
+    if (balance === 'debt') {
+      balanceWhere = { balance: { lt: 0 } };
+    } else if (balance === 'positive') {
+      balanceWhere = { balance: { gt: 0 } };
+    } else if (balance === 'zero') {
+      balanceWhere = { balance: 0 };
+    }
+
+    let statusWhere = {};
+    if (status === 'active') {
+      statusWhere = { isBlocked: false };
+    } else if (status === 'blocked') {
+      statusWhere = { isBlocked: true };
+    }
+
     return prisma.customer.findMany({
       where: {
         clubId: req.user.clubId,
+        ...balanceWhere,
+        ...statusWhere,
         ...(q ? { OR: [{ fullName: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] } : {}),
       },
       orderBy: { fullName: 'asc' },
-      take: 50,
+      take: 100,
     });
   });
 
@@ -55,9 +77,11 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     const exists = await prisma.customer.findFirst({ where: { clubId: req.user.clubId, phone } });
     if (exists) fail('Bu telefon raqami bilan mijoz allaqachon bor.');
 
-    return prisma.customer.create({
+    const created = await prisma.customer.create({
       data: { clubId: req.user.clubId, fullName: body.fullName.trim(), phone, note: body.note },
     });
+    await audit({ userId: req.user.sub, entity: 'Customer', entityId: created.id, action: 'create', newValue: created });
+    return created;
   });
 
   app.patch('/api/customers/:id', async (req) => {
@@ -65,12 +89,80 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     const body = z
       .object({
         fullName: z.string().min(1).optional(),
+        phone: z.string().min(7).optional(),
         note: z.string().nullable().optional(),
         isBlocked: z.boolean().optional(),
       })
       .parse(req.body);
 
-    return prisma.customer.update({ where: { id }, data: body });
+    const before = await prisma.customer.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!before) fail('Mijoz topilmadi.');
+
+    let normalizedPhone: string | undefined = undefined;
+    if (body.phone) {
+      normalizedPhone = normalizePhone(body.phone);
+      const duplicate = await prisma.customer.findFirst({
+        where: { clubId: req.user.clubId, phone: normalizedPhone, id: { not: id } },
+      });
+      if (duplicate) fail('Bu telefon raqami bilan boshqa mijoz ro\'yxatdan o\'tgan.');
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: {
+        ...(body.fullName ? { fullName: body.fullName.trim() } : {}),
+        ...(normalizedPhone !== undefined ? { phone: normalizedPhone } : {}),
+        ...(body.note !== undefined ? { note: body.note } : {}),
+        ...(body.isBlocked !== undefined ? { isBlocked: body.isBlocked } : {}),
+      },
+    });
+
+    await audit({
+      userId: req.user.sub,
+      entity: 'Customer',
+      entityId: id,
+      action: 'update',
+      oldValue: before,
+      newValue: updated,
+    });
+
+    return updated;
+  });
+
+  app.delete('/api/customers/:id', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const { id } = idParam.parse(req.params);
+    const customer = await prisma.customer.findFirst({ where: { id, clubId: req.user.clubId } });
+    if (!customer) fail('Mijoz topilmadi.');
+
+    const [sessionsCount, packagesCount] = await Promise.all([
+      prisma.session.count({ where: { customerId: id } }),
+      prisma.customerPackage.count({ where: { customerId: id } }),
+    ]);
+
+    if (sessionsCount > 0 || packagesCount > 0) {
+      await prisma.customer.update({ where: { id }, data: { isBlocked: true } });
+      await audit({
+        userId: req.user.sub,
+        entity: 'Customer',
+        entityId: id,
+        action: 'archive',
+        oldValue: customer,
+        isCritical: true,
+      });
+      return { archived: true, message: 'Mijoz faoliyat ko\'rsatgani uchun qora ro\'yxatga olindi (arxivlandi).' };
+    }
+
+    await prisma.customer.delete({ where: { id } });
+    await audit({
+      userId: req.user.sub,
+      entity: 'Customer',
+      entityId: id,
+      action: 'delete',
+      oldValue: customer,
+      isCritical: true,
+    });
+    return { ok: true };
   });
 
   app.post('/api/customers/:id/topup', async (req) => {

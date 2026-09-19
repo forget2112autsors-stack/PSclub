@@ -33,14 +33,22 @@ const sana = (iso: string) => new Date(iso).toLocaleDateString('uz-UZ');
 
 export function Customers() {
   const [q, setQ] = useState('');
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'debt' | 'positive' | 'zero'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const client = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['customers', q],
-    queryFn: () => api<Customer[]>(`/api/customers?q=${encodeURIComponent(q)}`),
+    queryKey: ['customers', q, balanceFilter, statusFilter],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      if (balanceFilter !== 'all') params.set('balance', balanceFilter);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      return api<Customer[]>(`/api/customers?${params.toString()}`);
+    },
   });
 
   const refresh = () => void client.invalidateQueries({ queryKey: ['customers'] });
@@ -62,12 +70,33 @@ export function Customers() {
         </button>
       </header>
 
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Ism yoki telefon bo'yicha qidirish…"
-        className={`${inputClass} max-w-sm`}
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Ism yoki telefon bo'yicha qidirish…"
+          className={`${inputClass} max-w-xs`}
+        />
+        <select
+          value={balanceFilter}
+          onChange={(e) => setBalanceFilter(e.target.value as any)}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="all">Barcha balanslar</option>
+          <option value="debt">Qarzdorlar (&lt; 0)</option>
+          <option value="positive">Ijobiy balans (&gt; 0)</option>
+          <option value="zero">Nol balans (= 0)</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="all">Barcha holatlar</option>
+          <option value="active">Faqat faollar</option>
+          <option value="blocked">Qora ro'yxatdagilar</option>
+        </select>
+      </div>
 
       {qarzdorlar.length > 0 && (
         <p className="rounded-lg bg-amber-950/60 px-4 py-3 text-sm text-amber-300">
@@ -279,6 +308,18 @@ function CustomerDetail({
     onError,
   });
 
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const remove = useMutation({
+    mutationFn: () => api(`/api/customers/${customer.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+    onError,
+  });
+
   const d = query.data;
 
   return (
@@ -470,20 +511,138 @@ function CustomerDetail({
           </section>
 
           {isManager(user) && (
-            <button
-              type="button"
-              onClick={() => block.mutate(!d.customer.isBlocked)}
-              className={`tap rounded-lg px-4 py-2.5 text-sm transition ${
-                d.customer.isBlocked
-                  ? 'bg-slate-800 hover:bg-slate-700'
-                  : 'bg-slate-800 text-red-400 hover:bg-slate-700'
-              }`}
-            >
-              {d.customer.isBlocked ? 'Qora ro\'yxatdan chiqarish' : 'Qora ro\'yxatga qo\'yish'}
-            </button>
+            <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="tap rounded-lg bg-slate-800 px-4 py-2.5 text-sm text-slate-200 transition hover:bg-slate-700"
+              >
+                Tahrirlash
+              </button>
+              <button
+                type="button"
+                onClick={() => block.mutate(!d.customer.isBlocked)}
+                className={`tap rounded-lg px-4 py-2.5 text-sm transition ${
+                  d.customer.isBlocked
+                    ? 'bg-slate-800 hover:bg-slate-700'
+                    : 'bg-slate-800 text-amber-400 hover:bg-slate-700'
+                }`}
+              >
+                {d.customer.isBlocked ? 'Qora ro\'yxatdan chiqarish' : 'Qora ro\'yxatga qo\'yish'}
+              </button>
+              <button
+                type="button"
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (confirmDelete) remove.mutate();
+                  else setConfirmDelete(true);
+                }}
+                className={`tap rounded-lg px-4 py-2.5 text-sm transition ${
+                  confirmDelete
+                    ? 'bg-red-700 text-white hover:bg-red-600'
+                    : 'bg-slate-800 text-red-400 hover:bg-slate-700'
+                }`}
+              >
+                {confirmDelete ? 'Aniqmi? O\'chirishni bosing' : 'O\'chirish'}
+              </button>
+            </div>
           )}
         </div>
       )}
+
+      {editing && (
+        <EditCustomerModal
+          customer={d?.customer ?? customer}
+          onClose={() => setEditing(false)}
+          onUpdated={() => {
+            void query.refetch();
+            onDone();
+          }}
+          onError={onError}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function EditCustomerModal({
+  customer,
+  onClose,
+  onUpdated,
+  onError,
+}: {
+  customer: Customer;
+  onClose: () => void;
+  onUpdated: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [fullName, setFullName] = useState(customer.fullName);
+  const [phone, setPhone] = useState(customer.phone ?? '');
+  const [note, setNote] = useState(customer.note ?? '');
+
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/api/customers/${customer.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fullName: fullName.trim(), phone: phone.trim() || undefined, note: note.trim() || null }),
+      }),
+    onSuccess: () => {
+      onUpdated();
+      onClose();
+    },
+    onError,
+  });
+
+  return (
+    <Modal title={`Tahrirlash: ${customer.fullName}`} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (fullName.trim()) save.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field label="Ism-familiya">
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className={inputClass}
+            required
+          />
+        </Field>
+        <Field label="Telefon raqami">
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className={inputClass}
+            placeholder="+998901234567"
+          />
+        </Field>
+        <Field label="Izoh">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className={inputClass}
+            placeholder="Doimiy mijoz..."
+          />
+        </Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="tap rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            disabled={!fullName.trim() || save.isPending}
+            className="tap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+          </button>
+        </div>
+      </form>
     </Modal>
   );
 }

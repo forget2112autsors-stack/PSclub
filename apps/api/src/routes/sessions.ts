@@ -195,11 +195,36 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  app.get('/api/products', async (req) =>
-    prisma.product.findMany({
-      where: { clubId: req.user.clubId, isActive: true },
+  app.get('/api/products', async (req) => {
+    const query = req.query as { all?: string; q?: string; categoryId?: string; stockStatus?: string };
+    const all = query?.all === '1';
+    const q = query?.q?.trim();
+    const categoryId = query?.categoryId;
+    const stockStatus = query?.stockStatus;
+
+    let stockWhere = {};
+    if (stockStatus === 'out') {
+      stockWhere = { stockQty: { lte: 0 } };
+    } else if (stockStatus === 'in_stock') {
+      stockWhere = { stockQty: { gt: 0 } };
+    }
+
+    const products = await prisma.product.findMany({
+      where: {
+        clubId: req.user.clubId,
+        ...(all ? {} : { isActive: true }),
+        ...(categoryId ? { categoryId } : {}),
+        ...stockWhere,
+        ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { barcode: { contains: q } }] } : {}),
+      },
       include: { category: { select: { name: true } } },
       orderBy: [{ isQuickKey: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-    }),
-  );
+    });
+
+    if (stockStatus === 'low') {
+      return products.filter((p) => p.stockQty <= p.minStock && p.stockQty > 0);
+    }
+
+    return products;
+  });
 }

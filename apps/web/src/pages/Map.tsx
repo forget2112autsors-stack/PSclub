@@ -80,6 +80,9 @@ export function StationMap() {
   const [tick, setTick] = useState(() => Date.now());
   const [opening, setOpening] = useState<MapStation | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const query = useQuery({
     queryKey: ['map'],
@@ -99,6 +102,26 @@ export function StationMap() {
 
   const fetchedAt = query.dataUpdatedAt || Date.now();
   const stations = query.data?.stations ?? [];
+  const types = Array.from(new Set(stations.map((s) => s.type)));
+
+  const filteredStations = stations.filter((station) => {
+    if (search.trim() && !String(station.number).includes(search.trim())) {
+      return false;
+    }
+    if (typeFilter !== 'all' && station.type !== typeFilter) {
+      return false;
+    }
+    if (statusFilter !== 'all') {
+      const minutes = station.session ? liveMinutes(station.session, fetchedAt, tick) : 0;
+      const look = lookOf(station, minutes);
+      if (statusFilter === 'free' && look !== 'free') return false;
+      if (statusFilter === 'busy' && (look !== 'busy' && look !== 'soon' && look !== 'over')) return false;
+      if (statusFilter === 'paused' && look !== 'paused') return false;
+      if (statusFilter === 'off' && look !== 'off') return false;
+    }
+    return true;
+  });
+
   const alerts = stations.filter(
     (s) => s.session && (s.session.creditExceeded || lookOf(s, liveMinutes(s.session, fetchedAt, tick)) === 'over'),
   );
@@ -119,6 +142,65 @@ export function StationMap() {
         </div>
       </header>
 
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Joy raqami..."
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-36"
+        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setTypeFilter('all')}
+            className={`px-2.5 py-1 text-xs rounded-lg transition ${
+              typeFilter === 'all'
+                ? 'bg-emerald-600 text-white font-medium'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            Barcha turlar
+          </button>
+          {types.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={`px-2.5 py-1 text-xs rounded-lg transition ${
+                typeFilter === t
+                  ? 'bg-emerald-600 text-white font-medium'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="h-4 w-px bg-slate-700 mx-1 hidden sm:block" />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { id: 'all', label: 'Barchasi' },
+            { id: 'free', label: 'Bo\'sh' },
+            { id: 'busy', label: 'Band' },
+            { id: 'paused', label: 'Pauza' },
+            { id: 'off', label: 'Xizmatda emas' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setStatusFilter(item.id)}
+              className={`px-2.5 py-1 text-xs rounded-lg transition ${
+                statusFilter === item.id
+                  ? 'bg-emerald-600 text-white font-medium'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {alerts.length > 0 && (
         <p role="alert" className="mb-4 rounded-lg bg-red-950/60 px-4 py-3 text-sm text-red-300">
           Diqqat: {alerts.map((s) => `${s.number}-joy`).join(', ')} — vaqt tugadi yoki limit oshdi.
@@ -132,7 +214,7 @@ export function StationMap() {
       )}
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-        {stations.map((station) => {
+        {filteredStations.map((station) => {
           const session = station.session;
           const minutes = session ? liveMinutes(session, fetchedAt, tick) : 0;
           const look = LOOK[lookOf(station, minutes)];

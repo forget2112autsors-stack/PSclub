@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { fail } from '../errors.ts';
 import { broadcast } from '../realtime.ts';
 import { requireAuth } from '../auth.ts';
-import { addExpense, closeShift, currentShift, openShift, shiftSummary } from '../services/shift.ts';
+import { addExpense, closeShift, currentShift, deleteExpense, openShift, shiftSummary, updateExpense } from '../services/shift.ts';
 
 export async function shiftRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAuth);
@@ -63,5 +63,29 @@ export async function shiftRoutes(app: FastifyInstance): Promise<void> {
       amount: body.amount,
       note: body.note,
     });
+  });
+
+  app.patch('/api/expenses/:id', async (req) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = z
+      .object({
+        category: z.string().min(1).optional(),
+        amount: z.number().int().min(1).optional(),
+        note: z.string().nullable().optional(),
+      })
+      .parse(req.body);
+
+    return updateExpense({
+      expenseId: id,
+      userId: req.user.sub,
+      category: body.category,
+      amount: body.amount,
+      note: body.note,
+    });
+  });
+
+  app.delete('/api/expenses/:id', async (req) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    return deleteExpense({ expenseId: id, userId: req.user.sub });
   });
 }

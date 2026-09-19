@@ -39,9 +39,21 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/suppliers', async (req) => {
-    const all = (req.query as { all?: string })?.all === '1';
+    const query = req.query as { all?: string; q?: string; debtOnly?: string };
+    const all = query?.all === '1';
+    const q = query?.q?.trim();
+    const debtOnly = query?.debtOnly === '1';
+
     const rows = await prisma.supplier.findMany({
-      where: { clubId: req.user.clubId, ...(all ? {} : { isActive: true }) },
+      where: {
+        clubId: req.user.clubId,
+        ...(all ? {} : { isActive: true }),
+        ...(q
+          ? {
+              OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }],
+            }
+          : {}),
+      },
       orderBy: { name: 'asc' },
     });
 
@@ -74,7 +86,7 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    return rows.map((s) => {
+    const result = rows.map((s) => {
       const kelgan = kelganMap.get(s.id) ?? 0;
       const tolangan = tolanganMap.get(s.id) ?? 0;
       return {
@@ -84,6 +96,11 @@ export async function supplierRoutes(app: FastifyInstance): Promise<void> {
         qarz: kelgan - tolangan,
       };
     });
+
+    if (debtOnly) {
+      return result.filter((s) => s.qarz > 0);
+    }
+    return result;
   });
 
   app.get('/api/suppliers/:id', async (req) => {

@@ -34,7 +34,20 @@ export function Stock() {
   const [writingOff, setWritingOff] = useState<Product | null>(null);
   const [history, setHistory] = useState<Product | null | 'all'>(null);
 
-  const products = useQuery({ queryKey: ['products'], queryFn: () => api<Product[]>('/api/products') });
+  const [search, setSearch] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [stockStatus, setStockStatus] = useState<string>('all');
+
+  const params = new URLSearchParams();
+  if (search.trim()) params.set('q', search.trim());
+  if (categoryId) params.set('categoryId', categoryId);
+  if (stockStatus && stockStatus !== 'all') params.set('stockStatus', stockStatus);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  const products = useQuery({
+    queryKey: ['products', search, categoryId, stockStatus],
+    queryFn: () => api<Product[]>(`/api/products${qs}`),
+  });
   const categories = useQuery({
     queryKey: ['product-categories'],
     queryFn: () => api<Category[]>('/api/product-categories'),
@@ -83,6 +96,39 @@ export function Stock() {
           {error}
         </p>
       )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Mahsulot qidirish..."
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[200px]"
+        />
+        <select
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
+          aria-label="Kategoriya bo'yicha filter"
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">Barcha kategoriyalar</option>
+          {(categories.data ?? []).map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={stockStatus}
+          onChange={(e) => setStockStatus(e.target.value)}
+          aria-label="Qoldiq holati bo'yicha filter"
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="all">Barcha qoldiqlar</option>
+          <option value="in_stock">Yetarli qoldiq</option>
+          <option value="low">Kam qolganlar</option>
+          <option value="out">Tugaganlar (0)</option>
+        </select>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -225,8 +271,8 @@ function EditProduct({
     onError,
   });
 
-  const hide = useMutation({
-    mutationFn: () => patch({ isActive: false }),
+  const remove = useMutation({
+    mutationFn: () => api(`/api/products/${product.id}`, { method: 'DELETE' }),
     onSuccess: () => {
       onDone();
       onClose();
@@ -287,13 +333,13 @@ function EditProduct({
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={hide.isPending}
-            onClick={() => (confirmed ? hide.mutate() : setConfirmed(true))}
+            disabled={remove.isPending}
+            onClick={() => (confirmed ? remove.mutate() : setConfirmed(true))}
             className={`tap rounded-lg px-4 py-3 text-sm transition ${
               confirmed ? 'bg-red-700 hover:bg-red-600' : 'bg-slate-800 text-red-400 hover:bg-slate-700'
             }`}
           >
-            {confirmed ? 'Aniqmi? Bosing' : 'Ro\'yxatdan olib tashlash'}
+            {confirmed ? 'Aniqmi? O\'chirish' : "O'chirish"}
           </button>
           <button
             type="button"
@@ -306,8 +352,7 @@ function EditProduct({
         </div>
 
         <p className="text-xs text-slate-500">
-          Mahsulot butunlay o'chirilmaydi — eski sotuvlar unga bog'langan. U shunchaki ro'yxatdan
-          yashiriladi.
+          Agar mahsulotda harakatlar (sotuv, kirim) bo'lsa, u arxivlanadi (yashiriladi). Harakat bo'lmasa, butunlay o'chiriladi.
         </p>
       </div>
     </Modal>
@@ -716,10 +761,16 @@ const TUR_RANGI: Record<Movement['type'], string> = {
 
 /** Ombor tarixi — TZ M3.3. Ma'lumot bazada bor edi, ko'rish imkoni yo'q edi. */
 function StockHistory({ product, onClose }: { product: Product | null; onClose: () => void }) {
+  const [typeFilter, setTypeFilter] = useState<'all' | Movement['type']>('all');
+
+  const params = new URLSearchParams();
+  if (product) params.set('productId', product.id);
+  if (typeFilter !== 'all') params.set('type', typeFilter);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
   const query = useQuery({
-    queryKey: ['stock-movements', product?.id ?? 'all'],
-    queryFn: () =>
-      api<Movement[]>(`/api/stock/movements${product ? `?productId=${product.id}` : ''}`),
+    queryKey: ['stock-movements', product?.id ?? 'all', typeFilter],
+    queryFn: () => api<Movement[]>(`/api/stock/movements${qs}`),
   });
 
   const vaqt = (iso: string) =>
@@ -732,6 +783,23 @@ function StockHistory({ product, onClose }: { product: Product | null; onClose: 
 
   return (
     <Modal title={product ? `Tarix — ${product.name}` : 'Ombor tarixi'} onClose={onClose} wide>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {(['all', 'IN', 'SALE', 'INVENTORY', 'WRITE_OFF'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTypeFilter(t)}
+            className={`px-3 py-1 text-xs rounded-lg transition ${
+              typeFilter === t
+                ? 'bg-emerald-600 text-white font-medium'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            {t === 'all' ? 'Barchasi' : TUR_NOMI[t]}
+          </button>
+        ))}
+      </div>
+
       {query.isLoading && <p className="text-sm text-slate-400">Yuklanmoqda…</p>}
 
       {query.data && query.data.length === 0 && (

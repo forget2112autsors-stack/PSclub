@@ -50,6 +50,9 @@ function pultText(t: Tariff): string {
 export function Tariffs() {
   const [editing, setEditing] = useState<{ tariff: Tariff | null } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState<'all' | 'HOURLY' | 'PACKAGE'>('all');
 
   const types = useQuery({ queryKey: ['station-types'], queryFn: () => api<StationType[]>('/api/station-types') });
   const tariffs = useQuery({
@@ -59,6 +62,13 @@ export function Tariffs() {
 
   const list = tariffs.data ?? [];
   const gaps = findGaps(list, types.data ?? []);
+
+  const filteredList = list.filter((t) => {
+    if (search.trim() && !t.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    if (typeFilter && t.typeId !== typeFilter) return false;
+    if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
+    return true;
+  });
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -89,6 +99,38 @@ export function Tariffs() {
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tarif nomi bo'yicha qidirish..."
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[200px]"
+        />
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          aria-label="Joy turi bo'yicha filter"
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">Barcha joy turlari</option>
+          {(types.data ?? []).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value as 'all' | 'HOURLY' | 'PACKAGE')}
+          aria-label="Tarif turi bo'yicha filter"
+          className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="all">Barcha turlar</option>
+          <option value="HOURLY">Soatbay</option>
+          <option value="PACKAGE">Paket</option>
+        </select>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="text-xs text-slate-400">
@@ -104,7 +146,7 @@ export function Tariffs() {
             </tr>
           </thead>
           <tbody>
-            {list.map((t) => (
+            {filteredList.map((t) => (
               <tr
                 key={t.id}
                 onClick={() => setEditing({ tariff: t })}
@@ -136,9 +178,11 @@ export function Tariffs() {
           </tbody>
         </table>
 
-        {list.length === 0 && (
+        {filteredList.length === 0 && (
           <p className="py-6 text-sm text-slate-500">
-            Hali tarif yo'q. "Tarif qo'shish" bilan klubdagi haqiqiy narxlarni kiriting.
+            {list.length === 0
+              ? 'Hali tarif yo\'q. "Tarif qo\'shish" bilan klubdagi haqiqiy narxlarni kiriting.'
+              : 'Filtrga mos tarif topilmadi.'}
           </p>
         )}
       </div>
