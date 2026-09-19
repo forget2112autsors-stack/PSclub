@@ -14,7 +14,7 @@
 
 ---
 
-## BAJARILGAN ISHLAR HOLATI — 2026-09-19
+## BAJARILGAN ISHLAR HOLATI — 2026-09-19 (kechqurun)
 
 Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 **✗** boshlanmagan.
@@ -23,14 +23,14 @@ Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 |---|---|---|
 | M1 Joylar xaritasi va seans | ✓ | Xarita, seans, pauza, ko'chirish, **bo'lish (split)**, **pult sverkasi** — hammasi bor |
 | M2 Tariflar | ✓ | Muharrir bilan birga. Teng ustuvorlikda joy turiga bog'langani yutadi |
-| M3 Bufet va ombor | ◐ | Sotuv, kirim, **inventarizatsiya** ✓. Shtrix-kod va **ta'minotchilar hisobi** yo'q |
+| M3 Bufet va ombor | ✓ | Sotuv, kirim, inventarizatsiya, **hisobdan chiqarish**, **ombor tarixi**, **o'rtacha tannarx** ✓. Shtrix-kod yo'q (kam ahamiyatli) |
 | M4 Kassa, to'lov, smena | ◐ | Smena, sverka, chiqim, aralash to'lov, **limitni administrator ochishi** ✓. Click/Payme — 2-bosqich |
 | M5 Mijozlar | ✗ | Butun modul — baza tayyor, interfeys yo'q (5-bosqich) |
 | M6 Hisobot va analitika | ◐ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)** ✓. Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash yo'q |
 | M7 Telegram bot | ✗ | Butun modul (4 va 5-bosqich) |
 | M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. Avtomatik backup sozlanmagan, rus tili yo'q |
 | PWA / offline kesh | ✗ | 4-bosqichda (2.3-bo'limdagi majburiy chora) |
-| **Ta'minotchilar hisobi** | ✗ | **Yangi talab** (2.1-bo'lim). Bazada `supplier` jadvali yo'q, kirim hujjati ta'minotchiga bog'lanmagan |
+| **Ta'minotchilar hisobi** | ✓ | Ta'minotchi ro'yxati, kirimni unga bog'lash, qarz hisobi va to'lov. To'lov chiqim sifatida yoziladi — kassa sverkasi avtomatik to'g'ri chiqadi |
 
 **Qabul mezonlari:** 9 ta bajarildi (QM-1…QM-6, QM-8, QM-9, QM-11),
 QM-7 qisman, QM-10 va QM-12 qolgan. Batafsil 10-bo'limda.

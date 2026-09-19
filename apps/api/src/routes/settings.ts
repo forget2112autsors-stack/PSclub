@@ -298,6 +298,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         productId: z.string().min(1),
         qty: z.number().int().min(1),
         unitCost: z.number().int().min(0).nullable().default(null),
+        supplierId: z.string().nullable().default(null),
         note: z.string().nullable().default(null),
       })
       .parse(req.body);
@@ -324,6 +325,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       prisma.stockMovement.create({
         data: {
           productId: body.productId,
+          supplierId: body.supplierId,
           type: 'IN',
           qty: body.qty,
           unitCost: body.unitCost,
@@ -407,7 +409,10 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       },
       orderBy: { createdAt: 'desc' },
       take: query.limit,
-      include: { product: { select: { id: true, name: true } } },
+      include: {
+        product: { select: { id: true, name: true } },
+        supplier: { select: { name: true } },
+      },
     });
 
     const userIds = [...new Set(rows.map((r) => r.createdBy).filter((x): x is string => Boolean(x)))];
@@ -425,6 +430,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       unitCost: r.unitCost,
       note: r.note,
       product: r.product,
+      supplier: r.supplier?.name ?? null,
       user: r.createdBy ? (byId.get(r.createdBy) ?? null) : null,
     }));
   });

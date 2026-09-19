@@ -12,6 +12,7 @@ import { Reports } from './pages/Reports.tsx';
 import { Settings } from './pages/Settings.tsx';
 import { Shift } from './pages/Shift.tsx';
 import { Stock } from './pages/Stock.tsx';
+import { Suppliers } from './pages/Suppliers.tsx';
 import { Tariffs } from './pages/Tariffs.tsx';
 import { useAuth } from './store/auth.ts';
 
@@ -48,6 +49,7 @@ export function App() {
             <Route path="ombor" element={<Stock />} />
             <Route path="hisobotlar" element={<Reports />} />
             <Route path="tariflar" element={<Tariffs />} />
+            <Route path="taminotchilar" element={<Suppliers />} />
             <Route path="audit" element={<Audit />} />
             <Route path="sozlamalar" element={<Settings />} />
           </Route>

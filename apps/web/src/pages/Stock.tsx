@@ -454,6 +454,12 @@ function StockIn({
   const [qty, setQty] = useState('');
   const [unitCost, setUnitCost] = useState(String(product.costPrice));
   const [note, setNote] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+
+  const suppliers = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => api<{ id: string; name: string }[]>('/api/suppliers'),
+  });
 
   const save = useMutation({
     mutationFn: () =>
@@ -463,6 +469,7 @@ function StockIn({
           productId: product.id,
           qty: Number(qty) || 0,
           unitCost: unitCost === '' ? null : Number(unitCost),
+          supplierId: supplierId || null,
           note: note.trim() || null,
         }),
       }),
@@ -493,9 +500,24 @@ function StockIn({
             className={inputClass}
           />
         </Field>
-        <Field label="Izoh (yetkazib beruvchi va h.k.)">
+        <Field label="Ta'minotchi">
+          <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={inputClass}>
+            <option value="">Ko'rsatilmagan</option>
+            {suppliers.data?.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Izoh">
           <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
         </Field>
+
+        <p className="text-xs text-slate-500">
+          Ta'minotchi tanlansa, bu kirim uning qarziga qo'shiladi.
+        </p>
         <button
           type="button"
           disabled={!qty || save.isPending}
@@ -674,6 +696,7 @@ interface Movement {
   unitCost: number | null;
   note: string | null;
   product: { id: string; name: string };
+  supplier: string | null;
   user: string | null;
 }
 
@@ -739,7 +762,9 @@ function StockHistory({ product, onClose }: { product: Product | null; onClose: 
                   >
                     {m.qty > 0 ? `+${m.qty}` : m.qty}
                   </td>
-                  <td className="py-2 text-slate-500">{m.note ?? ''}</td>
+                  <td className="py-2 text-slate-500">
+                    {[m.supplier, m.note].filter(Boolean).join(' · ')}
+                  </td>
                   <td className="py-2 text-slate-500">{m.user ?? ''}</td>
                 </tr>
               ))}

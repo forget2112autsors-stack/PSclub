@@ -99,6 +99,7 @@ model Club {
   products     Product[]
   customers    Customer[]
   shifts       Shift[]
+  suppliers    Supplier[]
 
   @@map("club")
 }
@@ -312,19 +313,40 @@ model Product {
   @@map("product")
 }
 
-model StockMovement {
-  id        String            @id @default(uuid())
-  productId String            @map("product_id")
-  type      StockMovementType
-  qty       Int
-  unitCost  Int?              @map("unit_cost")
+/// Ta'minotchi — TZ 2.1. Kirim va unga to'langan pul shu yerga bog'lanadi.
+model Supplier {
+  id        String   @id @default(uuid())
+  clubId    String   @map("club_id")
+  name      String
+  phone     String?
   note      String?
-  createdAt DateTime          @default(now()) @map("created_at")
-  createdBy String?           @map("created_by")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  product Product @relation(fields: [productId], references: [id])
+  club      Club            @relation(fields: [clubId], references: [id])
+  movements StockMovement[]
+  expenses  Expense[]
+
+  @@index([clubId])
+  @@map("supplier")
+}
+
+model StockMovement {
+  id         String            @id @default(uuid())
+  productId  String            @map("product_id")
+  supplierId String?           @map("supplier_id")
+  type       StockMovementType
+  qty        Int
+  unitCost   Int?              @map("unit_cost")
+  note       String?
+  createdAt  DateTime          @default(now()) @map("created_at")
+  createdBy  String?           @map("created_by")
+
+  product  Product   @relation(fields: [productId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
 
   @@index([productId])
+  @@index([supplierId])
   @@map("stock_movement")
 }
 
@@ -398,15 +420,18 @@ model Expense {
   id         String   @id @default(uuid())
   shiftId    String   @map("shift_id")
   operatorId String   @map("operator_id")
+  supplierId String?  @map("supplier_id")
   category   String
   amount     Int
   note       String?
   createdAt  DateTime @default(now()) @map("created_at")
 
-  shift    Shift   @relation(fields: [shiftId], references: [id])
-  operator AppUser @relation(fields: [operatorId], references: [id])
+  shift    Shift     @relation(fields: [shiftId], references: [id])
+  operator AppUser   @relation(fields: [operatorId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
 
   @@index([shiftId])
+  @@index([supplierId])
   @@map("expense")
 }
 
