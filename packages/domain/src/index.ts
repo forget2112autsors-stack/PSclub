@@ -24,3 +24,6 @@ export { reconcileCash } from './shift/cash.ts';
 
 export type { BookingState, BookingWindow, SlotInput } from './booking/rules.ts';
 export { bookingState, freeSlots, isHeldByBooking } from './booking/rules.ts';
+
+export type { IntakeInput } from './stock/cost.ts';
+export { weightedCost } from './stock/cost.ts';

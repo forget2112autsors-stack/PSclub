@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { weightedCost } from '@psklub/domain';
+
 import { prisma, audit } from '../db.ts';
 import { requireAuth, requireManager } from '../auth.ts';
 
@@ -303,13 +305,21 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     const product = await prisma.product.findUnique({ where: { id: body.productId } });
     if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
 
+    // Tannarx ustiga yozilmaydi, qoldiq bilan tortib o'rtachalanadi (TZ M3.3).
+    const yangiTannarx =
+      body.unitCost !== null
+        ? weightedCost({
+            currentQty: product.stockQty,
+            currentCost: product.costPrice,
+            incomingQty: body.qty,
+            incomingCost: body.unitCost,
+          })
+        : product.costPrice;
+
     const [updated] = await prisma.$transaction([
       prisma.product.update({
         where: { id: body.productId },
-        data: {
-          stockQty: { increment: body.qty },
-          ...(body.unitCost !== null ? { costPrice: body.unitCost } : {}),
-        },
+        data: { stockQty: { increment: body.qty }, costPrice: yangiTannarx },
       }),
       prisma.stockMovement.create({
         data: {
@@ -323,8 +333,100 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }),
     ]);
 
-    await audit({ userId: req.user.sub, entity: 'Product', entityId: body.productId, action: 'stock-in', newValue: body });
+    await audit({
+      userId: req.user.sub,
+      entity: 'Product',
+      entityId: body.productId,
+      action: 'stock-in',
+      oldValue: { stockQty: product.stockQty, costPrice: product.costPrice },
+      newValue: { ...body, costPrice: yangiTannarx },
+    });
     return updated;
+  });
+
+  // Hisobdan chiqarish — buzilgan, muddati o'tgan yoki sinib qolgan tovar.
+  // Sanoq bilan yashirish o'rniga sababi yozilgan alohida yozuv qoladi.
+  app.post('/api/stock/write-off', async (req, reply) => {
+    if (!requireManager(req, reply)) return;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        qty: z.number().int().min(1),
+        reason: z.string().min(1, 'Sabab ko\'rsatilishi shart.'),
+      })
+      .parse(req.body);
+
+    const product = await prisma.product.findUnique({ where: { id: body.productId } });
+    if (!product) return reply.code(404).send({ error: 'Mahsulot topilmadi.' });
+    if (product.stockQty < body.qty) {
+      return reply.code(400).send({ error: `Omborda ${product.stockQty} dona bor, ${body.qty} dona chiqarib bo'lmaydi.` });
+    }
+
+    const [updated] = await prisma.$transaction([
+      prisma.product.update({
+        where: { id: body.productId },
+        data: { stockQty: { decrement: body.qty } },
+      }),
+      prisma.stockMovement.create({
+        data: {
+          productId: body.productId,
+          type: 'WRITE_OFF',
+          qty: -body.qty,
+          unitCost: product.costPrice,
+          note: body.reason,
+          createdBy: req.user.sub,
+        },
+      }),
+    ]);
+
+    // Hisobdan chiqarish — pul yo'qotilishi, shuning uchun kritik.
+    await audit({
+      userId: req.user.sub,
+      entity: 'Product',
+      entityId: body.productId,
+      action: 'write-off',
+      newValue: { qty: body.qty, reason: body.reason, zarar: body.qty * product.costPrice },
+    });
+
+    return { product: updated, zarar: body.qty * product.costPrice };
+  });
+
+  // Ombor tarixi — TZ M3.3. Bazada bor edi, lekin ko'rish imkoni yo'q edi.
+  app.get('/api/stock/movements', async (req) => {
+    const query = z
+      .object({
+        productId: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+      })
+      .parse(req.query ?? {});
+
+    const rows = await prisma.stockMovement.findMany({
+      where: {
+        product: { clubId: req.user.clubId },
+        ...(query.productId ? { productId: query.productId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+      include: { product: { select: { id: true, name: true } } },
+    });
+
+    const userIds = [...new Set(rows.map((r) => r.createdBy).filter((x): x is string => Boolean(x)))];
+    const users = await prisma.appUser.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, fullName: true },
+    });
+    const byId = new Map(users.map((u) => [u.id, u.fullName]));
+
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      type: r.type,
+      qty: r.qty,
+      unitCost: r.unitCost,
+      note: r.note,
+      product: r.product,
+      user: r.createdBy ? (byId.get(r.createdBy) ?? null) : null,
+    }));
   });
 
   // Inventarizatsiya — TZ M3.3. Sanoq natijasi va farq qayd qilinadi.
