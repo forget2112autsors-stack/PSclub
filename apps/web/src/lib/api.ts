@@ -45,10 +45,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError('Sessiya tugadi — qaytadan kiring.', 401);
   }
 
-  const body = response.status === 204 ? null : await response.json().catch(() => null);
+  let body: any = null;
+  const contentType = response.headers.get('content-type') || '';
+  if (response.status !== 204) {
+    if (contentType.includes('application/json')) {
+      body = await response.json().catch(() => null);
+    } else {
+      const text = await response.text().catch(() => '');
+      body = { error: text.trim().slice(0, 300) || response.statusText };
+    }
+  }
+
   if (!response.ok) {
     const errObj = body as { error?: string; message?: string } | null;
-    const message = errObj?.message ?? errObj?.error ?? 'Kutilmagan xatolik.';
+    const message = errObj?.message ?? errObj?.error ?? `Server xatosi (${response.status}): ${response.statusText || 'noma\'lum xatolik'}`;
     throw new ApiError(message, response.status);
   }
   return body as T;

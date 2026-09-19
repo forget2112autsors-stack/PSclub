@@ -18,7 +18,7 @@
     { "source": "/api/telegram-setup", "destination": "/api/telegram-setup" },
     { "source": "/api/telegram", "destination": "/api/telegram" },
     { "source": "/api/cron", "destination": "/api/cron" },
-    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/api/index?__url=/api/$1" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }

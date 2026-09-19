@@ -12,9 +12,21 @@ async function getApp() {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  // Vercel rewrites (/api/(.*) -> /api/index) da asl yo'lni tiklash:
-  if (req.headers['x-matched-path']) {
-    req.url = req.headers['x-matched-path'] as string;
+  // Vercel rewrites (/api/(.*) -> /api/index?__url=/api/$1) orqali asl yo'lni tiklash:
+  if (req.url) {
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      const realPath = parsedUrl.searchParams.get('__url');
+      if (realPath) {
+        parsedUrl.searchParams.delete('__url');
+        const qs = parsedUrl.searchParams.toString();
+        req.url = realPath + (qs ? `?${qs}` : '');
+      }
+    } catch {}
+  }
+
+  if (req.headers['x-matched-path'] && typeof req.headers['x-matched-path'] === 'string' && req.headers['x-matched-path'] !== '/api/index') {
+    req.url = req.headers['x-matched-path'];
   }
 
   try {
