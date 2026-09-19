@@ -16,6 +16,7 @@ import { catalogRoutes, settingsRoutes } from './routes/settings.ts';
 import { sessionRoutes } from './routes/sessions.ts';
 import { shiftRoutes } from './routes/shifts.ts';
 import { reportRoutes } from './routes/reports.ts';
+import { customerRoutes } from './routes/customers.ts';
 import { realtimeRoutes } from './realtime.ts';
 import { startTelegram, telegramStatus } from './telegram.ts';
 
@@ -104,6 +105,7 @@ await app.register(catalogRoutes);
 await app.register(sessionRoutes);
 await app.register(shiftRoutes);
 await app.register(reportRoutes);
+await app.register(customerRoutes);
 await app.register(realtimeRoutes);
 
 // ----------------------------------------------------------- Interfeys -----

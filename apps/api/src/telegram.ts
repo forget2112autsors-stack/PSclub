@@ -5,6 +5,13 @@ import { verifyPin } from './auth.ts';
 import { currentShift, shiftSummary } from './services/shift.ts';
 import { listStations } from './services/session.ts';
 import { dailyReport } from './services/report.ts';
+import {
+  createBooking,
+  customerSummary,
+  findOrCreateByPhone,
+  heldStationIds,
+} from './services/customer.ts';
+import { freeSlots } from '@psklub/domain';
 
 let bot: Bot | null = null;
 
@@ -134,9 +141,14 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     await ctx.reply(await reportText(user.clubId, clubDate(club.tzOffsetMinutes, 1)), { parse_mode: 'HTML' });
   });
 
-  bot.on('message:text', async (ctx) => {
+  // Mijoz buyruqlari PIN ishlovchisidan OLDIN turishi shart: quyidagi
+  // message:text hamma matnni ushlaydi va zanjirni to'xtatadi.
+  registerCustomerFlow(bot);
+
+  bot.on('message:text', async (ctx, next) => {
     const chatId = String(ctx.chat.id);
-    if (!awaitingPin.has(chatId)) return;
+    // PIN kutilmayotgan bo'lsa — xabarni keyingi ishlovchiga uzatamiz.
+    if (!awaitingPin.has(chatId)) return next();
 
     const pin = ctx.message.text.trim();
     if (!/^\d{4,8}$/.test(pin)) return ctx.reply('PIN 4-8 ta raqamdan iborat bo\'lishi kerak.');
@@ -173,8 +185,13 @@ export async function startTelegram(token: string | undefined, dailyHour: number
   });
 
   await bot.api.setMyCommands([
-    { command: 'hozir', description: 'Shu daqiqadagi holat' },
-    { command: 'hisobot', description: 'Kechagi kun xulosasi' },
+    { command: 'mijoz', description: 'Mijoz sifatida ro\'yxatdan o\'tish' },
+    { command: 'joylar', description: 'Hozir bo\'sh joylar' },
+    { command: 'bron', description: 'Joy band qilish' },
+    { command: 'balans', description: 'Balans va paketlar' },
+    { command: 'tarix', description: 'Oxirgi seanslar' },
+    { command: 'hozir', description: 'Klub holati (xodimlar uchun)' },
+    { command: 'hisobot', description: 'Kechagi kun (xodimlar uchun)' },
     { command: 'uzish', description: 'Ulanishni bekor qilish' },
   ]);
 
@@ -190,6 +207,211 @@ export async function startTelegram(token: string | undefined, dailyHour: number
 /** Bot tirikmi — /api/health shuni ko'rsatadi. */
 export function telegramStatus(): { enabled: boolean; polling: boolean } {
   return { enabled: bot !== null, polling: bot?.isRunning() ?? false };
+}
+
+// ============================================================== Mijozlar ===
+// TZ M7.2. Xodimlar PIN bilan ulanadi, mijoz esa telefon raqami bilan —
+// mijozda PIN yo'q va bo'lmasligi ham kerak.
+
+const KUNLAR = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan'];
+
+async function club() {
+  return prisma.club.findFirstOrThrow();
+}
+
+/** Telegram foydalanuvchisi qaysi mijoz ekanini topadi. */
+async function customerOf(telegramId: string) {
+  return prisma.customer.findFirst({ where: { telegramId } });
+}
+
+function soat(d: Date, tz: number): string {
+  const local = new Date(d.getTime() + tz * 60_000);
+  return `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function kun(d: Date, tz: number): string {
+  const local = new Date(d.getTime() + tz * 60_000);
+  return `${KUNLAR[local.getUTCDay()]} ${local.getUTCDate()}.${String(local.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function registerCustomerFlow(instance: Bot): void {
+  instance.command('mijoz', async (ctx) => {
+    const existing = await customerOf(String(ctx.from?.id));
+    if (existing) {
+      return ctx.reply(
+        `Salom, ${existing.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
+      );
+    }
+    await ctx.reply(
+      'Ro\'yxatdan o\'tish uchun telefon raqamingizni yuboring.\nPastdagi tugmani bosing — raqam o\'zi yuboriladi.',
+      {
+        reply_markup: {
+          keyboard: [[{ text: '📱 Raqamimni yuborish', request_contact: true }]],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        },
+      },
+    );
+  });
+
+  instance.on('message:contact', async (ctx) => {
+    const contact = ctx.message.contact;
+    // Boshqa odamning raqamini yuborishga yo'l qo'ymaymiz.
+    if (contact.user_id !== ctx.from.id) {
+      return ctx.reply('Iltimos, o\'z raqamingizni yuboring.');
+    }
+
+    const c = await club();
+    const ism = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Mijoz';
+    const customer = await findOrCreateByPhone(c.id, contact.phone_number, ism, String(ctx.from.id));
+
+    await ctx.reply(
+      `Ro'yxatdan o'tdingiz, ${customer.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
+      { reply_markup: { remove_keyboard: true } },
+    );
+  });
+
+  instance.command('joylar', async (ctx) => {
+    const c = await club();
+    const stations = await listStations(c.id);
+    const held = await heldStationIds(c.id);
+
+    const bosh = stations.filter(
+      (s) => !s.session && s.status === 'FREE' && !held.has(s.id),
+    );
+
+    if (bosh.length === 0) return ctx.reply('Hozir bo\'sh joy yo\'q. Keyinroq urinib ko\'ring yoki /bron qiling.');
+
+    const tur = new Map<string, number[]>();
+    for (const s of bosh) {
+      const list = tur.get(s.type) ?? [];
+      list.push(s.number);
+      tur.set(s.type, list);
+    }
+
+    const lines = ['<b>Hozir bo\'sh joylar</b>', ''];
+    for (const [name, raqamlar] of tur) lines.push(`${name}: ${raqamlar.join(', ')}-joy`);
+    lines.push('', 'Band qilish: /bron');
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  });
+
+  instance.command('balans', async (ctx) => {
+    const customer = await customerOf(String(ctx.from?.id));
+    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
+
+    const info = await customerSummary(customer.id);
+    const lines = [
+      `<b>${customer.fullName}</b>`,
+      `Balans: ${summa(customer.balance)} so'm`,
+    ];
+    if (customer.balance < 0) lines.push(`⚠ Qarz: ${summa(-customer.balance)} so'm`);
+    if (customer.bonusPoints > 0) lines.push(`Bonus: ${summa(customer.bonusPoints)}`);
+
+    if (info.packages.length > 0) {
+      lines.push('', '<b>Paketlar</b>');
+      for (const p of info.packages) {
+        const qolgan = `${Math.floor(p.remainingMinutes / 60)} soat ${p.remainingMinutes % 60} daq`;
+        lines.push(`${p.name}: ${qolgan}`);
+      }
+    }
+    lines.push('', `Jami tashrif: ${info.sessionCount} marta`);
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  });
+
+  instance.command('tarix', async (ctx) => {
+    const customer = await customerOf(String(ctx.from?.id));
+    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
+
+    const info = await customerSummary(customer.id);
+    if (info.recentSessions.length === 0) return ctx.reply('Hali seans bo\'lmagan.');
+
+    const c = await club();
+    const lines = ['<b>Oxirgi seanslar</b>', ''];
+    for (const s of info.recentSessions) {
+      lines.push(
+        `${kun(s.endedAt!, c.tzOffsetMinutes)} · ${s.station.number}-joy (${s.station.type.name}) · ${summa(s.totalAmount)} so'm`,
+      );
+    }
+    lines.push('', `Jami sarflangan: ${summa(info.totalSpent)} so'm`);
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  });
+
+  instance.command('bron', async (ctx) => {
+    const customer = await customerOf(String(ctx.from?.id));
+    if (!customer) return ctx.reply('Avval /mijoz orqali ro\'yxatdan o\'ting.');
+    if (customer.isBlocked) return ctx.reply('Kechirasiz, sizga bron qilish mumkin emas. Klub bilan bog\'laning.');
+
+    const c = await club();
+    const now = new Date();
+    const taken = await prisma.booking.findMany({
+      where: { station: { clubId: c.id }, status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gte: now } },
+      select: { startsAt: true },
+    });
+
+    const slots = freeSlots({
+      openMinute: 9 * 60,
+      closeMinute: 23 * 60,
+      now,
+      tzOffsetMinutes: c.tzOffsetMinutes,
+      taken: taken.map((t) => t.startsAt),
+    }).slice(0, 8);
+
+    if (slots.length === 0) return ctx.reply('Bugun uchun bo\'sh vaqt qolmadi.');
+
+    await ctx.reply('Qaysi vaqtga bron qilamiz?', {
+      reply_markup: {
+        inline_keyboard: slots.map((s) => [
+          { text: `${kun(s, c.tzOffsetMinutes)} ${soat(s, c.tzOffsetMinutes)}`, callback_data: `bron:${s.toISOString()}` },
+        ]),
+      },
+    });
+  });
+
+  instance.callbackQuery(/^bron:/, async (ctx) => {
+    const customer = await customerOf(String(ctx.from.id));
+    if (!customer) {
+      await ctx.answerCallbackQuery('Avval /mijoz orqali ro\'yxatdan o\'ting.');
+      return;
+    }
+
+    const startsAt = new Date(ctx.callbackQuery.data.slice('bron:'.length));
+    const c = await club();
+    const stations = await listStations(c.id);
+    const bosh = stations.find((s) => s.status === 'FREE');
+
+    if (!bosh) {
+      await ctx.answerCallbackQuery('Bo\'sh joy qolmadi.');
+      return;
+    }
+
+    try {
+      const booking = await createBooking({
+        stationId: bosh.id,
+        customerId: customer.id,
+        startsAt,
+        note: 'Telegram orqali',
+      });
+      await ctx.answerCallbackQuery('Bron qabul qilindi');
+      await ctx.editMessageText(
+        [
+          '✅ <b>Bron qabul qilindi</b>',
+          `${kun(startsAt, c.tzOffsetMinutes)} soat ${soat(startsAt, c.tzOffsetMinutes)}`,
+          `${booking.station.number}-joy (${booking.station.type.name})`,
+          '',
+          'Eslatma: 15 daqiqa kechiksangiz bron bekor bo\'ladi.',
+        ].join('\n'),
+        { parse_mode: 'HTML' },
+      );
+      void notifyOwner(
+        `📅 <b>Yangi bron</b>\n${customer.fullName} · ${booking.station.number}-joy\n${kun(startsAt, c.tzOffsetMinutes)} ${soat(startsAt, c.tzOffsetMinutes)}`,
+      );
+    } catch (err) {
+      await ctx.answerCallbackQuery(err instanceof Error ? err.message.slice(0, 190) : 'Bron qilinmadi');
+    }
+  });
 }
 
 /**

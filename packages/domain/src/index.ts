@@ -21,3 +21,6 @@ export { itemsAmount, sessionTotals, splitAmount } from './session/totals.ts';
 
 export type { CashInput, CashReconciliation } from './shift/cash.ts';
 export { reconcileCash } from './shift/cash.ts';
+
+export type { BookingState, BookingWindow, SlotInput } from './booking/rules.ts';
+export { bookingState, freeSlots, isHeldByBooking } from './booking/rules.ts';
