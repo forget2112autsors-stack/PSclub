@@ -11,7 +11,7 @@ import { catalogRoutes, settingsRoutes } from './routes/settings.ts';
 import { sessionRoutes } from './routes/sessions.ts';
 import { shiftRoutes } from './routes/shifts.ts';
 import { reportRoutes } from './routes/reports.ts';
-import { initRealtime } from './realtime.ts';
+import { realtimeRoutes } from './realtime.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -94,10 +94,10 @@ await app.register(catalogRoutes);
 await app.register(sessionRoutes);
 await app.register(shiftRoutes);
 await app.register(reportRoutes);
+await app.register(realtimeRoutes);
 
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
-  initRealtime(app.server);
   app.log.info(`PS Klub API: http://localhost:${env.PORT}`);
 } catch (err) {
   app.log.error(err);

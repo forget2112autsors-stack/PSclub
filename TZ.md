@@ -439,14 +439,14 @@ sinxronizatsiya qatlami 1-versiyada yo'q.)*
 | Backend | Node.js 20 + Fastify | Yengil, tez, WebSocket bilan yaxshi ishlaydi |
 | Baza | PostgreSQL 16 | Ishonchli, tranzaksiyalar kuchli, bepul |
 | ORM | Prisma | Migratsiya va tiplar avtomatik |
-| Real vaqt | WebSocket (Socket.IO) | Joylar xaritasi jonli yangilanishi uchun |
+| Real vaqt | SSE (brauzerdagi EventSource) | *(v1.2: Socket.IO o'rniga — biz faqat "yangilan" signalini yuboramiz, ikki tomonlama aloqa ishlatilmagan. SSE brauzerda tayyor, o'zi qayta ulanadi, mijoz paketi 13 KB yengillashdi)* |
 | Frontend | React 18 + Vite + Tailwind | Tez, keng qo'llab-quvvatlanadi |
 | Holat | TanStack Query + Zustand | Server ma'lumoti keshi va qayta ulanish mantiqi |
 | Mobil | PWA (Progressive Web App) | Alohida ilova yozish shart emas |
 | Windows | Brauzer kiosk rejimi | *(v1.1: Tauri chiqarildi — bulutda ishlaganda .exe qiymat qo'shmaydi)* |
 | Telegram | grammY | Backend ichida, alohida servis kerak emas |
 | Konteyner | Docker Compose | Lokal va bulutda bir xil ishga tushadi |
-| Hisobot | ExcelJS + Puppeteer(PDF) | Excel va PDF eksport |
+| Hisobot | ExcelJS + brauzer chop etish | *(v1.2: Puppeteer o'rniga — u ~200 MB Chromium tortadi; brauzerning "Chop etish -> PDF" imkoni bir xil natija beradi)* |
 
 ### 7.2. Joylashuv sxemasi
 

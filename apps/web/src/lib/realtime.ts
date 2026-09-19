@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
 
-let socket: Socket | null = null;
+let source: EventSource | null = null;
+const listeners = new Set<() => void>();
+const stateListeners = new Set<(up: boolean) => void>();
 
-function getSocket(): Socket {
-  socket ??= io({ path: '/socket.io', transports: ['websocket', 'polling'] });
-  return socket;
+/** Bitta ulanish hamma sahifaga yetadi — har biri o'zinikini ochmaydi. */
+function ensureSource(): EventSource {
+  if (source) return source;
+
+  const es = new EventSource('/api/stream');
+  es.addEventListener('refresh', () => {
+    for (const fn of listeners) fn();
+  });
+  es.onopen = () => {
+    for (const fn of stateListeners) fn(true);
+  };
+  // EventSource uzilganda o'zi qayta ulanadi — qo'shimcha mantiq kerak emas.
+  es.onerror = () => {
+    for (const fn of stateListeners) fn(false);
+  };
+  source = es;
+  return es;
 }
 
 /**
@@ -18,20 +33,14 @@ export function useRealtime(onRefresh: () => void): { connected: boolean } {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const s = getSocket();
-    const refresh = () => onRefresh();
-    const up = () => setConnected(true);
-    const down = () => setConnected(false);
+    const es = ensureSource();
+    setConnected(es.readyState === EventSource.OPEN);
 
-    s.on('refresh', refresh);
-    s.on('connect', up);
-    s.on('disconnect', down);
-    setConnected(s.connected);
-
+    listeners.add(onRefresh);
+    stateListeners.add(setConnected);
     return () => {
-      s.off('refresh', refresh);
-      s.off('connect', up);
-      s.off('disconnect', down);
+      listeners.delete(onRefresh);
+      stateListeners.delete(setConnected);
     };
   }, [onRefresh]);
 

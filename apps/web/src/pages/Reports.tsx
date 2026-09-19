@@ -73,13 +73,20 @@ export function Reports() {
     <div className="max-w-4xl space-y-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Kunlik hisobot</h1>
-        <div className="flex gap-2">
+        <div className="no-print flex gap-2">
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
             className="tap rounded-lg bg-slate-900 px-3 py-2 text-sm outline-none ring-1 ring-slate-700 focus:ring-emerald-600"
           />
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="tap rounded-lg bg-slate-800 px-4 py-2 text-sm transition hover:bg-slate-700"
+          >
+            PDF / chop etish
+          </button>
           {isManager(user) && (
             <button
               type="button"

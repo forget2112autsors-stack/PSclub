@@ -16,3 +16,48 @@ body {
   min-height: 44px;
   min-width: 44px;
 }
+
+/* PDF — brauzerning "Chop etish -> PDF saqlash" imkoni orqali (TZ M6.3).
+   Puppeteer ishlatilmadi: u ~200 MB Chromium tortadi, natija esa bir xil. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Navigatsiya, tugmalar va sana tanlash qog'ozda kerak emas. */
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Ekrandagi qorong'i fon qog'ozda siyoh yeb qo'yadi. */
+  [class*='bg-slate-9'],
+  [class*='bg-slate-8'],
+  [class*='bg-slate-950'] {
+    background: transparent !important;
+    border: 1px solid #ddd;
+  }
+
+  [class*='text-slate-'],
+  [class*='text-emerald-'] {
+    color: #000 !important;
+  }
+
+  table {
+    break-inside: auto;
+  }
+
+  tr,
+  section {
+    break-inside: avoid;
+  }
+}
