@@ -17,6 +17,7 @@
     "dev:web": "npm run dev --workspace @psklub/web",
     "db:generate": "npm run db:generate --workspace @psklub/api",
     "db:migrate": "npm run db:migrate --workspace @psklub/api",
-    "seed": "npm run seed --workspace @psklub/api"
+    "seed": "npm run seed --workspace @psklub/api",
+    "vercel-build": "prisma generate --schema apps/api/prisma/schema.prisma && npm run build --workspace @psklub/web"
   }
 }

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "apps/web/dist",
+  "functions": {
+    "api/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 4 * * *"
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/telegram", "destination": "/api/telegram" },
+    { "source": "/api/cron", "destination": "/api/cron" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}

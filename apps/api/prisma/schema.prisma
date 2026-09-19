@@ -508,6 +508,20 @@ model Booking {
   @@map("booking")
 }
 
+/// Telegram suhbatining qisqa muddatli holati.
+///
+/// Ilgari xotirada saqlanardi, lekin serversiz muhitda har bir so'rov
+/// alohida jarayonda ishlaydi va xotira umumiy emas. PIN urinishlarini
+/// cheklash xavfsizlik chorasi — u albatta saqlanishi kerak.
+model BotState {
+  chatId      String   @id @map("chat_id")
+  awaitingPin Boolean  @default(false) @map("awaiting_pin")
+  failedPins  Int      @default(0) @map("failed_pins")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("bot_state")
+}
+
 /// Audit jurnali hech qachon o'chirilmaydi — TZ M8.
 model AuditLog {
   id         String   @id @default(uuid())

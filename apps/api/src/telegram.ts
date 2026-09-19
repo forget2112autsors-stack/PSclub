@@ -19,6 +19,15 @@ const MAX_PIN_ATTEMPTS = 5;
 
 const summa = (v: number) => v.toLocaleString('uz-UZ');
 
+/** PIN kutish holatini bazaga yozadi — serversizda xotira umumiy emas. */
+async function setAwaitingPin(chatId: string, awaiting: boolean): Promise<void> {
+  await prisma.botState.upsert({
+    where: { chatId },
+    create: { chatId, awaitingPin: awaiting },
+    update: { awaitingPin: awaiting },
+  });
+}
+
 /** Xabar faqat botga ulangan administrator va egasiga boradi. */
 async function recipients(): Promise<string[]> {
   const users = await prisma.appUser.findMany({
@@ -102,16 +111,18 @@ function clubDate(tzOffsetMinutes: number, daysAgo = 0): string {
   return new Date(t).toISOString().slice(0, 10);
 }
 
-export async function startTelegram(token: string | undefined, dailyHour: number): Promise<void> {
-  if (!token) return;
+/**
+ * Botni yasaydi va barcha ishlovchilarni ro'yxatdan o'tkazadi, lekin
+ * xabarlarni qabul qilishni boshlamaydi. Ikki rejim uchun umumiy:
+ * polling (doimiy server) va webhook (Vercel).
+ */
+export async function buildBot(token: string | undefined, dailyHour: number): Promise<Bot | null> {
+  if (!token) return null;
 
   bot = new Bot(token);
   // PIN kutilayotgan chatlar. Xotirada saqlanadi — server qayta yuklansa
   // foydalanuvchi /start ni qaytadan bosadi, zarari yo'q.
-  const awaitingPin = new Set<string>();
-  const failedPins = new Map<string, number>();
-  // Har soatda urinishlar hisobi tozalanadi.
-  setInterval(() => failedPins.clear(), 60 * 60_000);
+
 
   /**
    * Botni ochgan har bir odam shu yerdan boshlaydi.
@@ -161,7 +172,7 @@ export async function startTelegram(token: string | undefined, dailyHour: number
   });
 
   bot.callbackQuery('kim:xodim', async (ctx) => {
-    awaitingPin.add(String(ctx.chat?.id));
+    await setAwaitingPin(String(ctx.chat?.id), true);
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
       'PIN-kodingizni yuboring.\nFaqat administrator va egasi ulana oladi.',
@@ -212,11 +223,12 @@ export async function startTelegram(token: string | undefined, dailyHour: number
 
   bot.on('message:text', async (ctx, next) => {
     const chatId = String(ctx.chat.id);
+    const holat = await prisma.botState.findUnique({ where: { chatId } });
     // PIN kutilmayotgan bo'lsa — xabarni keyingi ishlovchiga uzatamiz.
-    if (!awaitingPin.has(chatId)) return next();
+    if (!holat?.awaitingPin) return next();
 
     // PIN 4 xonali — cheksiz urinish berilsa uni topish oson bo'lib qoladi.
-    const urinish = (failedPins.get(chatId) ?? 0) + 1;
+    const urinish = holat.failedPins + 1;
     if (urinish > MAX_PIN_ATTEMPTS) {
       return ctx.reply('Juda ko\'p urinish. Bir soatdan keyin qayta urinib ko\'ring.');
     }
@@ -238,8 +250,7 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     if (!matched) return ctx.reply('PIN-kod noto\'g\'ri.');
 
     await prisma.appUser.update({ where: { id: matched.id }, data: { telegramChatId: chatId } });
-    awaitingPin.delete(chatId);
-    failedPins.delete(chatId);
+    await prisma.botState.delete({ where: { chatId } }).catch(() => {});
     await audit({
       userId: matched.id,
       entity: 'AppUser',
@@ -257,24 +268,48 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     console.error('[telegram] buyruqni bajarishda xato:', err.message);
   });
 
-  await bot.api.setMyCommands([
-    { command: 'mijoz', description: 'Mijoz sifatida ro\'yxatdan o\'tish' },
-    { command: 'joylar', description: 'Hozir bo\'sh joylar' },
-    { command: 'bron', description: 'Joy band qilish' },
-    { command: 'balans', description: 'Balans va paketlar' },
-    { command: 'tarix', description: 'Oxirgi seanslar' },
-    { command: 'hozir', description: 'Klub holati (xodimlar uchun)' },
-    { command: 'hisobot', description: 'Kechagi kun (xodimlar uchun)' },
-    { command: 'uzish', description: 'Ulanishni bekor qilish' },
-  ]);
+  await bot.init();
+  return bot;
+}
 
-  keepPolling(bot);
+const BUYRUQLAR = [
+  { command: 'mijoz', description: 'Mijoz sifatida ro\'yxatdan o\'tish' },
+  { command: 'joylar', description: 'Hozir bo\'sh joylar' },
+  { command: 'bron', description: 'Joy band qilish' },
+  { command: 'balans', description: 'Balans va paketlar' },
+  { command: 'tarix', description: 'Oxirgi seanslar' },
+  { command: 'hozir', description: 'Klub holati (xodimlar uchun)' },
+  { command: 'hisobot', description: 'Kechagi kun (xodimlar uchun)' },
+  { command: 'uzish', description: 'Ulanishni bekor qilish' },
+];
+
+/** Doimiy server uchun — uzoq so'rov (polling) rejimi. */
+export async function startTelegram(token: string | undefined, dailyHour: number): Promise<void> {
+  const instance = await buildBot(token, dailyHour);
+  if (!instance) return;
+
+  // Webhook qolib ketgan bo'lsa polling ishlamaydi — avval tozalaymiz.
+  await instance.api.deleteWebhook().catch(() => {});
+  await instance.api.setMyCommands(BUYRUQLAR);
+
+  keepPolling(instance);
   startDailyDigest(dailyHour);
 
-  // Polling haqiqatan boshlandimi — bir necha soniyadan keyin tekshiramiz.
   setTimeout(() => {
-    console.log(`[telegram] polling holati: ${bot?.isRunning() ? 'ishlayapti' : 'ISHLAMAYAPTI'}`);
+    console.log(`[telegram] polling holati: ${instance.isRunning() ? 'ishlayapti' : 'ISHLAMAYAPTI'}`);
   }, 4_000);
+}
+
+/**
+ * Vercel uchun — Telegram xabarni o'zi yuboradi, biz kutib turmaymiz.
+ * Serversiz muhitda doimiy ulanish ushlab turib bo'lmaydi.
+ */
+export async function setupWebhook(token: string, url: string, secret: string): Promise<void> {
+  const instance = await buildBot(token, 0);
+  if (!instance) return;
+
+  await instance.api.setWebhook(url, { secret_token: secret, drop_pending_updates: true });
+  await instance.api.setMyCommands(BUYRUQLAR);
 }
 
 /** Bot tirikmi — /api/health shuni ko'rsatadi. */
@@ -566,10 +601,30 @@ function keepPolling(instance: Bot, attempt = 0): void {
 }
 
 /**
- * Kunlik xulosa — TZ M7.1.
+ * Kunlik xulosani yuboradi — TZ M7.1.
+ *
+ * Ham taymer (doimiy server), ham Vercel Cron shu funksiyani chaqiradi.
+ * Bot yasalmagan bo'lsa (webhook rejimi, sovuq funksiya) o'zi yasaydi.
+ */
+export async function sendDailyDigest(): Promise<boolean> {
+  if (!bot) {
+    const instance = await buildBot(process.env.TELEGRAM_BOT_TOKEN, 0);
+    if (!instance) return false;
+  }
+
+  const club = await prisma.club.findFirst();
+  if (!club) return false;
+
+  await notifyOwner(await reportText(club.id, clubDate(club.tzOffsetMinutes, 1)));
+  return true;
+}
+
+/**
+ * Doimiy serverda kunlik xulosa taymeri.
  *
  * Alohida cron kutubxonasi olinmadi: har daqiqada soatni tekshirish yetarli
- * va hech qanday bog'liqlik qo'shmaydi.
+ * va hech qanday bog'liqlik qo'shmaydi. Vercel'da bu ishlamaydi — u yerda
+ * platformaning o'z cron xizmati /api/cron ni chaqiradi.
  */
 function startDailyDigest(hour: number): void {
   let lastSent = '';
@@ -586,7 +641,7 @@ function startDailyDigest(hour: number): void {
       if (lastSent === today) return;
       lastSent = today;
 
-      await notifyOwner(await reportText(club.id, clubDate(club.tzOffsetMinutes, 1)));
+      await sendDailyDigest();
     })().catch(() => {
       /* xulosa yuborilmadi — ertaga qayta urinadi */
     });

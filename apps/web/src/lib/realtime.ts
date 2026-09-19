@@ -1,48 +1,60 @@
-import { useEffect, useState } from 'react';
-
-let source: EventSource | null = null;
-const listeners = new Set<() => void>();
-const stateListeners = new Set<(up: boolean) => void>();
-
-/** Bitta ulanish hamma sahifaga yetadi — har biri o'zinikini ochmaydi. */
-function ensureSource(): EventSource {
-  if (source) return source;
-
-  const es = new EventSource('/api/stream');
-  es.addEventListener('refresh', () => {
-    for (const fn of listeners) fn();
-  });
-  es.onopen = () => {
-    for (const fn of stateListeners) fn(true);
-  };
-  // EventSource uzilganda o'zi qayta ulanadi — qo'shimcha mantiq kerak emas.
-  es.onerror = () => {
-    for (const fn of stateListeners) fn(false);
-  };
-  source = es;
-  return es;
-}
+import { useEffect, useRef, useState } from 'react';
 
 /**
- * Serverdan "yangilan" signalini kutadi va aloqa holatini qaytaradi.
+ * Yangilanishni kuzatish.
  *
- * Aloqa uzilganini ko'rsatish TZ 7.3 va QM-7 talabi: operator ekrandagi
- * raqamlar eskirganini bilib turishi kerak.
+ * Ilgari SSE (EventSource) ishlatilardi — server o'zgarish bo'lganda darhol
+ * signal yuborardi. Vercel serversiz muhitida uzun ulanish ushlab turib
+ * bo'lmaydi (funksiya bir necha soniyada o'chadi), shuning uchun davriy
+ * so'rovga o'tildi.
+ *
+ * Buning narxi: yangilanish darhol emas, bir necha soniyadan keyin
+ * ko'rinadi. TZ 9-bo'limidagi "≤ 2 soniya kechikish" chegarasiga sig'ishi
+ * uchun oraliq 2 soniya qilingan. Sahifa ko'rinmayotganda so'rov
+ * yuborilmaydi — bekorga trafik sarflanmaydi.
  */
+const INTERVAL_MS = 2_000;
+
 export function useRealtime(onRefresh: () => void): { connected: boolean } {
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(true);
+  const saqlangan = useRef(onRefresh);
+  saqlangan.current = onRefresh;
+  const oxirgiRev = useRef<string | null>(null);
 
   useEffect(() => {
-    const es = ensureSource();
-    setConnected(es.readyState === EventSource.OPEN);
+    let toxtatilgan = false;
 
-    listeners.add(onRefresh);
-    stateListeners.add(setConnected);
-    return () => {
-      listeners.delete(onRefresh);
-      stateListeners.delete(setConnected);
+    const tekshir = async () => {
+      if (document.hidden) return;
+      try {
+        const r = await fetch('/api/revision', { cache: 'no-store' });
+        if (toxtatilgan) return;
+        setConnected(r.ok);
+        if (!r.ok) return;
+
+        const { rev } = (await r.json()) as { rev: string };
+        // Faqat haqiqatan o'zgarish bo'lganda yangilaymiz — aks holda
+        // xarita har 2 soniyada bekorga qayta yuklanardi.
+        if (oxirgiRev.current !== null && oxirgiRev.current !== rev) saqlangan.current();
+        oxirgiRev.current = rev;
+      } catch {
+        if (!toxtatilgan) setConnected(false);
+      }
     };
-  }, [onRefresh]);
+
+    const id = setInterval(() => void tekshir(), INTERVAL_MS);
+    // Sahifaga qaytilganda darhol yangilanadi, 2 soniya kutilmaydi.
+    const onVisible = () => {
+      if (!document.hidden) void tekshir();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      toxtatilgan = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   return { connected };
 }

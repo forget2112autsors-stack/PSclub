@@ -1,6 +1,8 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 
+import { prisma } from './db.ts';
+
 const clients = new Set<ServerResponse>();
 
 /**
@@ -23,6 +25,22 @@ export function broadcast(event = 'refresh'): void {
 }
 
 export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * O'zgarish belgisi — mijoz shuni kuzatib turadi.
+   *
+   * Har bir amal audit jurnaliga yozadi, shuning uchun eng oxirgi yozuv
+   * vaqti butun tizim uchun ishonchli "versiya" bo'lib xizmat qiladi.
+   * Bitta indeksli so'rov — xaritani har safar to'liq qayta yuklashdan
+   * ancha arzon.
+   */
+  app.get('/api/revision', async () => {
+    const [oxirgi, ochiq] = await Promise.all([
+      prisma.auditLog.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+      prisma.session.count({ where: { status: { in: ['ACTIVE', 'PAUSED'] } } }),
+    ]);
+    return { rev: `${oxirgi?.createdAt.getTime() ?? 0}:${ochiq}` };
+  });
+
   app.get('/api/stream', (req, reply) => {
     const res = reply.raw;
     res.writeHead(200, {
