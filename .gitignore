@@ -7,3 +7,7 @@ build/
 coverage/
 .DS_Store
 apps/web/dev-dist/
+
+.vercel
+.env*
+!.env.example

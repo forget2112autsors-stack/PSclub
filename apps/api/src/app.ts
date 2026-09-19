@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
-import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 
 import { env } from './env.ts';
@@ -157,6 +156,11 @@ await app.register(realtimeRoutes);
 const webDist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
 
 if (options.serveStatic !== false && existsSync(join(webDist, 'index.html'))) {
+  // Vercel'da statik fayllarni platformaning o'zi tarqatadi va bu paket
+  // umuman kerak emas. Yuqorida import qilinsa, serversiz muhitda
+  // @fastify/static ESM-only content-disposition ni require qilib qulaydi —
+  // shuning uchun faqat haqiqatan kerak bo'lganda yuklaymiz.
+  const { default: fastifyStatic } = await import('@fastify/static');
   await app.register(fastifyStatic, { root: webDist });
 
   // Sahifa manzillari (masalan /smena) brauzerda to'g'ridan-to'g'ri ochilsa
