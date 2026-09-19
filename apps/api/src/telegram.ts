@@ -15,6 +15,8 @@ import { freeSlots } from '@psklub/domain';
 
 let bot: Bot | null = null;
 
+const MAX_PIN_ATTEMPTS = 5;
+
 const summa = (v: number) => v.toLocaleString('uz-UZ');
 
 /** Xabar faqat botga ulangan administrator va egasiga boradi. */
@@ -107,16 +109,64 @@ export async function startTelegram(token: string | undefined, dailyHour: number
   // PIN kutilayotgan chatlar. Xotirada saqlanadi — server qayta yuklansa
   // foydalanuvchi /start ni qaytadan bosadi, zarari yo'q.
   const awaitingPin = new Set<string>();
+  const failedPins = new Map<string, number>();
+  // Har soatda urinishlar hisobi tozalanadi.
+  setInterval(() => failedPins.clear(), 60 * 60_000);
 
+  /**
+   * Botni ochgan har bir odam shu yerdan boshlaydi.
+   *
+   * Ilgari /start darhol PIN so'rardi — mijozlar esa PIN nima ekanini
+   * bilmaydi va shu yerda qotib qolardi. Endi avval kimligini so'raymiz;
+   * mijozlar xodimlardan ko'p, shuning uchun ular birinchi turadi.
+   */
   bot.command('start', async (ctx) => {
     const chatId = String(ctx.chat.id);
-    const linked = await prisma.appUser.findFirst({ where: { telegramChatId: chatId } });
-    if (linked) {
-      await ctx.reply(`Siz allaqachon ulangansiz: ${linked.fullName}.\n/hozir — holat\n/hisobot — kecha\n/uzish — ulanishni bekor qilish`);
+
+    const xodim = await prisma.appUser.findFirst({ where: { telegramChatId: chatId } });
+    if (xodim) {
+      await ctx.reply(
+        `Siz ulangansiz: ${xodim.fullName}\n\n/hozir — klub holati\n/hisobot — kechagi kun\n/uzish — ulanishni bekor qilish`,
+      );
       return;
     }
-    awaitingPin.add(chatId);
-    await ctx.reply('Salom! Ulanish uchun PIN-kodingizni yuboring.\nFaqat administrator va egasi ulanadi.');
+
+    const mijoz = await customerOf(String(ctx.from?.id));
+    if (mijoz) {
+      await ctx.reply(
+        `Salom, ${mijoz.fullName}!\n\n/joylar — hozir bo'sh joylar\n/bron — joy band qilish\n/balans — balans va paketlar\n/tarix — oxirgi seanslar`,
+      );
+      return;
+    }
+
+    await ctx.reply('Salom! Siz kimsiz?', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '👤 Mijozman', callback_data: 'kim:mijoz' }],
+          [{ text: '🔑 Xodimman', callback_data: 'kim:xodim' }],
+        ],
+      },
+    });
+  });
+
+  bot.callbackQuery('kim:mijoz', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText('Ro\'yxatdan o\'tish uchun telefon raqamingizni yuboring.');
+    await ctx.reply('Pastdagi tugmani bosing — raqam o\'zi yuboriladi.', {
+      reply_markup: {
+        keyboard: [[{ text: '📱 Raqamimni yuborish', request_contact: true }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    });
+  });
+
+  bot.callbackQuery('kim:xodim', async (ctx) => {
+    awaitingPin.add(String(ctx.chat?.id));
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      'PIN-kodingizni yuboring.\nFaqat administrator va egasi ulana oladi.',
+    );
   });
 
   bot.command('uzish', async (ctx) => {
@@ -150,6 +200,12 @@ export async function startTelegram(token: string | undefined, dailyHour: number
     // PIN kutilmayotgan bo'lsa — xabarni keyingi ishlovchiga uzatamiz.
     if (!awaitingPin.has(chatId)) return next();
 
+    // PIN 4 xonali — cheksiz urinish berilsa uni topish oson bo'lib qoladi.
+    const urinish = (failedPins.get(chatId) ?? 0) + 1;
+    if (urinish > MAX_PIN_ATTEMPTS) {
+      return ctx.reply('Juda ko\'p urinish. Bir soatdan keyin qayta urinib ko\'ring.');
+    }
+
     const pin = ctx.message.text.trim();
     if (!/^\d{4,8}$/.test(pin)) return ctx.reply('PIN 4-8 ta raqamdan iborat bo\'lishi kerak.');
 
@@ -168,6 +224,7 @@ export async function startTelegram(token: string | undefined, dailyHour: number
 
     await prisma.appUser.update({ where: { id: matched.id }, data: { telegramChatId: chatId } });
     awaitingPin.delete(chatId);
+    failedPins.delete(chatId);
     await audit({
       userId: matched.id,
       entity: 'AppUser',
