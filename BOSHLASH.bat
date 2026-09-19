@@ -49,13 +49,21 @@ echo.
 echo   Shu kompyuterda:     http://localhost:3000
 echo   Boshqa qurilmadan:   http://%COMPUTERNAME%:3000
 echo.
-echo   To'xtatish: shu oynani yoping yoki Ctrl+C bosing.
+echo   To'xtatish: shu oynani yoping yoki Ctrl+C bosib "Y" deng.
 echo   Oyna ochiq turishi kerak - yopilsa dastur ham to'xtaydi.
 echo.
 
-start "" http://localhost:3000
+if not "%PSKLUB_NO_BROWSER%"=="1" start "" http://localhost:3000
+
+rem Dastur kutilmaganda to'xtasa (masalan internet uzilib, baza javob
+rem bermay qolsa) o'zi qayta ishga tushadi - operator hech narsa qilmaydi.
+:QAYTA
 node --no-warnings --env-file=.env apps/api/src/index.ts
-goto END
+echo.
+echo   [!] Server to'xtadi. 5 soniyadan keyin qayta urinaman...
+echo       Butunlay to'xtatish uchun shu oynani yoping.
+timeout /t 5 /nobreak >nul
+goto QAYTA
 
 :NONODE
 echo   [X] Node.js topilmadi.
