@@ -14,29 +14,31 @@
 
 ---
 
-## BAJARILGAN ISHLAR HOLATI — 2026-09-18
+## BAJARILGAN ISHLAR HOLATI — 2026-09-19
 
 Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 **✗** boshlanmagan.
 
 | Modul | Holat | Nima qolgan |
 |---|---|---|
-| M1 Joylar xaritasi va seans | ◐ | Seansni **bo'lish (split)** yo'q; smena yopishda **umumiy pult sverkasi** yo'q |
-| M2 Tariflar | ✓ | — |
-| M3 Bufet va ombor | ◐ | **Inventarizatsiya (sanoq)** yo'q; shtrix-kod ishlatilmaydi |
-| M4 Kassa, to'lov, smena | ◐ | Limit oshganda **administrator ruxsati bilan ochish** yo'q; Click/Payme (2-bosqich) |
+| M1 Joylar xaritasi va seans | ✓ | Xarita, seans, pauza, ko'chirish, **bo'lish (split)**, **pult sverkasi** — hammasi bor |
+| M2 Tariflar | ✓ | Muharrir bilan birga. Teng ustuvorlikda joy turiga bog'langani yutadi |
+| M3 Bufet va ombor | ◐ | Sotuv, kirim, **inventarizatsiya** ✓. Shtrix-kod va **ta'minotchilar hisobi** yo'q |
+| M4 Kassa, to'lov, smena | ◐ | Smena, sverka, chiqim, aralash to'lov, **limitni administrator ochishi** ✓. Click/Payme — 2-bosqich |
 | M5 Mijozlar | ✗ | Butun modul — baza tayyor, interfeys yo'q (5-bosqich) |
-| M6 Hisobot va analitika | ◐ | Kunlik hisobot va Excel ✓. **Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash, PDF** yo'q |
+| M6 Hisobot va analitika | ◐ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)** ✓. Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash yo'q |
 | M7 Telegram bot | ✗ | Butun modul (4 va 5-bosqich) |
-| M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. **Avtomatik backup sozlanmagan**, rus tili yo'q |
+| M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. Avtomatik backup sozlanmagan, rus tili yo'q |
 | PWA / offline kesh | ✗ | 4-bosqichda (2.3-bo'limdagi majburiy chora) |
+| **Ta'minotchilar hisobi** | ✗ | **Yangi talab** (2.1-bo'lim). Bazada `supplier` jadvali yo'q, kirim hujjati ta'minotchiga bog'lanmagan |
 
 **Qabul mezonlari:** 9 ta bajarildi (QM-1…QM-6, QM-8, QM-9, QM-11),
 QM-7 qisman, QM-10 va QM-12 qolgan. Batafsil 10-bo'limda.
 
 **Eng muhim to'siq:** klubda sinovni (3-bosqich) boshlash uchun haqiqiy
-mahsulot ro'yxati va tasdiqlangan tariflar kerak. Hozir PS-3 tunda va VIP
-narxlari — taxminiy qiymatlar.
+mahsulot ro'yxati kerak. Joylar kiritilgan (6 PS-5, 6 PS-3, 2 VIP), lekin
+taqsimot taxminiy. PS-3 tunda (20 000) va VIP (60 000 / 45 000) narxlari
+ham taxminiy — tasdiqlanmaguncha QM-12 o'tmaydi.
 
 ---
 
