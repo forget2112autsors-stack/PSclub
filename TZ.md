@@ -25,15 +25,15 @@ Belgilar: **✓** bajarilgan va jonli bazada tekshirilgan · **◐** qisman ·
 | M2 Tariflar | ✓ | Muharrir bilan birga. Teng ustuvorlikda joy turiga bog'langani yutadi |
 | M3 Bufet va ombor | ✓ | Sotuv, kirim, inventarizatsiya, **hisobdan chiqarish**, **ombor tarixi**, **o'rtacha tannarx** ✓. Shtrix-kod yo'q (kam ahamiyatli) |
 | M4 Kassa, to'lov, smena | ◐ | Smena, sverka, chiqim, aralash to'lov, **limitni administrator ochishi** ✓. Click/Payme — 2-bosqich |
-| M5 Mijozlar | ✗ | Butun modul — baza tayyor, interfeys yo'q (5-bosqich) |
+| M5 Mijozlar | ◐ | Mijoz yaratish, qidirish, balans to'ldirish, tarix, bron — API va Telegram orqali ✓. **Operator ekrani yo'q**; abonement va bonus yo'q |
 | M6 Hisobot va analitika | ◐ | Kunlik hisobot, Excel, **PDF (brauzer chop etishi)** ✓. Bandlik issiqlik xaritasi, xodim kesimi, mijoz segmentatsiyasi, davr taqqoslash yo'q |
-| M7 Telegram bot | ✗ | Butun modul (4 va 5-bosqich) |
+| M7 Telegram bot | ✓ | Egasi: kunlik xulosa, ogohlantirishlar, /hozir. Mijoz: ro'yxatdan o'tish, bo'sh joylar, bron, balans, tarix. Tugmalar paneli bilan |
 | M8 Tizim, xavfsizlik, audit | ◐ | Rollar, PIN, audit ✓. Avtomatik backup sozlanmagan, rus tili yo'q |
 | PWA / offline kesh | ✗ | 4-bosqichda (2.3-bo'limdagi majburiy chora) |
 | **Ta'minotchilar hisobi** | ✓ | Ta'minotchi ro'yxati, kirimni unga bog'lash, qarz hisobi va to'lov. To'lov chiqim sifatida yoziladi — kassa sverkasi avtomatik to'g'ri chiqadi |
 
-**Qabul mezonlari:** 9 ta bajarildi (QM-1…QM-6, QM-8, QM-9, QM-11),
-QM-7 qisman, QM-10 va QM-12 qolgan. Batafsil 10-bo'limda.
+**Qabul mezonlari:** 10 ta bajarildi (QM-1…QM-6, QM-8…QM-11),
+QM-7 qisman, QM-12 qolgan (klubda parallel sinov). Batafsil 10-bo'limda.
 
 **Eng muhim to'siq:** klubda sinovni (3-bosqich) boshlash uchun haqiqiy
 mahsulot ro'yxati kerak. Joylar kiritilgan (6 PS-5, 6 PS-3, 2 VIP), lekin
@@ -555,7 +555,7 @@ narsa ham yo'q.)*
 - [~] **QM-7.** *(v1.1 da o'zgartirildi — eski matn: «internet uzilgan holatda barcha amallar ishlaydi».)* Internet uzilganda tizim buni ≤ 10 soniyada aniqlaydi va operatorga aniq xabar ko'rsatadi; yarim bajarilgan yozuv qolmaydi; aloqa tiklangach interfeys o'zi qayta ulanadi va holat to'g'ri ko'rinadi
 - [x] **QM-8.** Smena yopiladi, kassa farqi to'g'ri hisoblanadi, izohsiz yopib bo'lmaydi
 - [x] **QM-9.** Kunlik hisobot Excel ga chiqadi va qo'lda hisoblangan summa bilan to'liq mos keladi
-- [ ] **QM-10.** Egasi Telegramda kunlik xulosani avtomatik oladi
+- [x] **QM-10.** Egasi Telegramda kunlik xulosani avtomatik oladi
 - [x] **QM-11.** Operator o'chirgan/tuzatgan har bir yozuv audit jurnalida ko'rinadi
 - [ ] **QM-12.** Bir hafta GameClass3 bilan **parallel** ishlanganda ikkala tizim daromadi bir xil chiqadi (±1 %)
 
