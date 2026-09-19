@@ -15,12 +15,13 @@ const schema = z.object({
 const parsed = schema.safeParse(process.env);
 
 if (!parsed.success) {
-  console.error('Muhit o\'zgaruvchilari noto\'g\'ri:');
-  for (const issue of parsed.error.issues) {
-    console.error(`  ${issue.path.join('.')}: ${issue.message}`);
+  const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+  console.error('Muhit o\'zgaruvchilari noto\'g\'ri:\n' + parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n'));
+  if (!process.env.VERCEL) {
+    console.error('\n.env.example faylidan nusxa olib, .env ni to\'ldiring.');
+    process.exit(1);
   }
-  console.error('\n.env.example faylidan nusxa olib, .env ni to\'ldiring.');
-  process.exit(1);
+  throw new Error(`Muhit o'zgaruvchilari noto'g'ri yoki kiritilmagan: ${issues}. Vercel Environment Variables sozlamalarini tekshiring.`);
 }
 
 export const env = parsed.data;

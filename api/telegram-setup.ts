@@ -1,6 +1,5 @@
 // VERCEL / Cloud deployment setup endpoint for Telegram Webhook
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { setupWebhook } from '../apps/api/src/telegram.ts';
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -20,6 +19,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     : `${proto}://${host}/api/telegram`;
 
   try {
+    const { setupWebhook } = await import('../apps/api/src/telegram.ts');
     await setupWebhook(token, webhookUrl, secret || 'psklub-secret');
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');

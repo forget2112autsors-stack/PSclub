@@ -47,7 +47,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
-    const message = (body as { error?: string } | null)?.error ?? 'Kutilmagan xatolik.';
+    const errObj = body as { error?: string; message?: string } | null;
+    const message = errObj?.message ?? errObj?.error ?? 'Kutilmagan xatolik.';
     throw new ApiError(message, response.status);
   }
   return body as T;
