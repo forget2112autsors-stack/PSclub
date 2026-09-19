@@ -112,6 +112,9 @@ model AppUser {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
+  /// Telegram bot ulangan bo'lsa — xabarlar shu chatga boradi (TZ M7.1).
+  telegramChatId String? @unique @map("telegram_chat_id")
+
   club     Club      @relation(fields: [clubId], references: [id])
   sessions Session[]
   shifts   Shift[]

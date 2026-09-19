@@ -7,6 +7,9 @@ const schema = z.object({
   PORT: z.coerce.number().default(3000),
   HOST: z.string().default('0.0.0.0'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  // Bo'sh bo'lsa bot ishga tushmaydi — tizim baribir ishlayveradi.
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_DAILY_HOUR: z.coerce.number().int().min(0).max(23).default(9),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -2,6 +2,9 @@ import { reconcileCash } from '@psklub/domain';
 
 import { prisma, audit } from '../db.ts';
 import { fail } from '../errors.ts';
+import { notifyOwner } from '../telegram.ts';
+
+const summa = (v: number) => v.toLocaleString('uz-UZ');
 
 export async function currentShift(clubId: string) {
   return prisma.shift.findFirst({ where: { clubId, status: 'OPEN' } });
@@ -21,6 +24,13 @@ export async function openShift(clubId: string, operatorId: string, openingCash:
     action: 'open',
     newValue: { openingCash },
   });
+
+  const operator = await prisma.appUser.findUnique({ where: { id: operatorId } });
+  void notifyOwner(
+    ['🟢 <b>Smena ochildi</b>', operator?.fullName ?? '', `Kassada: ${summa(openingCash)} so'm`]
+      .filter(Boolean)
+      .join('\n'),
+  );
   return shift;
 }
 
@@ -137,7 +147,25 @@ export async function closeShift(input: CloseShiftInput) {
     isCritical: result.notifyOwner || summary.gamepadsMissing > 0,
   });
 
-  // notifyOwner — 4-bosqichda Telegram xabariga ulanadi (TZ M7.1).
+  const operator = await prisma.appUser.findUnique({ where: { id: input.userId } });
+  const ogoh: string[] = [];
+  if (result.notifyOwner) ogoh.push(`⚠ Kassa farqi chegaradan oshdi: ${summa(result.diff)} so'm`);
+  else if (result.diff !== 0) ogoh.push(`Kassa farqi: ${summa(result.diff)} so'm`);
+  if (summary.gamepadsMissing > 0) ogoh.push(`⚠ ${summary.gamepadsMissing} ta pult qaytmadi`);
+
+  void notifyOwner(
+    [
+      `🔴 <b>Smena yopildi</b>`,
+      operator?.fullName ?? '',
+      `Naqd tushum: ${summa(summary.cashPayments)} so'm`,
+      `Sanoq: ${summa(input.countedCash)} so'm`,
+      ...ogoh,
+      input.note ? `Izoh: ${input.note}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
+
   return {
     shift: closed,
     ...result,

@@ -3,6 +3,7 @@ import { calculateSession, sessionTotals, splitAmount, type Interval } from '@ps
 import { prisma, audit } from '../db.ts';
 import { fail } from '../errors.ts';
 import { loadTariffs } from './tariff-loader.ts';
+import { notifyOwner } from '../telegram.ts';
 
 const SESSION_WITH_DETAIL = {
   station: { include: { type: true } },
@@ -245,7 +246,16 @@ export async function addItem(
 
     const ctx = await calcContext(session.station.clubId);
     const { totals } = computeSession(session as SessionRow, ctx);
-    if (!totals.canAddService) fail(totals.addBlockReason ?? 'Yangi xizmat qo\'shib bo\'lmaydi.');
+    if (!totals.canAddService) {
+      void notifyOwner(
+        [
+          '⚠ <b>Ishonch limiti oshdi</b>',
+          `${session.station.number}-joy`,
+          `Qarz ${totals.debt.toLocaleString('uz-UZ')} so'm, limit ${session.creditLimit.toLocaleString('uz-UZ')} so'm`,
+        ].join('\n'),
+      );
+      fail(totals.addBlockReason ?? 'Yangi xizmat qo\'shib bo\'lmaydi.');
+    }
   }
 
   const amount = qty * product.salePrice;
@@ -522,6 +532,18 @@ export async function cancelSession(sessionId: string, reason: string, userId: s
     newValue: { reason },
     isCritical: true,
   });
+
+  const [station, user] = await Promise.all([
+    prisma.station.findUnique({ where: { id: session.stationId }, select: { number: true } }),
+    prisma.appUser.findUnique({ where: { id: userId }, select: { fullName: true } }),
+  ]);
+  void notifyOwner(
+    [
+      '⚠ <b>Seans bekor qilindi</b>',
+      `${station?.number}-joy · ${user?.fullName ?? ''}`,
+      `Sabab: ${reason}`,
+    ].join('\n'),
+  );
 }
 
 // -------------------------------------------------------- Xarita va detal ---
