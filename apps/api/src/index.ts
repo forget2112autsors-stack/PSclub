@@ -17,7 +17,7 @@ import { sessionRoutes } from './routes/sessions.ts';
 import { shiftRoutes } from './routes/shifts.ts';
 import { reportRoutes } from './routes/reports.ts';
 import { realtimeRoutes } from './realtime.ts';
-import { startTelegram } from './telegram.ts';
+import { startTelegram, telegramStatus } from './telegram.ts';
 
 const SESSION_TTL = '12h'; // Bir smena — TZ 9-bo'lim.
 
@@ -54,7 +54,11 @@ app.setErrorHandler((err, _req, reply) => {
   return reply.code(500).send({ error: 'Kutilmagan xatolik.' });
 });
 
-app.get('/api/health', async () => ({ ok: true, time: new Date().toISOString() }));
+app.get('/api/health', async () => ({
+  ok: true,
+  time: new Date().toISOString(),
+  telegram: telegramStatus(),
+}));
 
 // PIN oynasi uchun — foydalanuvchilar ro'yxati ochiq, PIN esa yopiq.
 app.get('/api/auth/users', async () => {

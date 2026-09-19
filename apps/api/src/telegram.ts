@@ -169,11 +169,51 @@ export async function startTelegram(token: string | undefined, dailyHour: number
   });
 
   bot.catch((err) => {
-    console.error('Telegram xatosi:', err.message);
+    console.error('[telegram] buyruqni bajarishda xato:', err.message);
   });
 
-  void bot.start({ drop_pending_updates: true });
+  await bot.api.setMyCommands([
+    { command: 'hozir', description: 'Shu daqiqadagi holat' },
+    { command: 'hisobot', description: 'Kechagi kun xulosasi' },
+    { command: 'uzish', description: 'Ulanishni bekor qilish' },
+  ]);
+
+  keepPolling(bot);
   startDailyDigest(dailyHour);
+
+  // Polling haqiqatan boshlandimi — bir necha soniyadan keyin tekshiramiz.
+  setTimeout(() => {
+    console.log(`[telegram] polling holati: ${bot?.isRunning() ? 'ishlayapti' : 'ISHLAMAYAPTI'}`);
+  }, 4_000);
+}
+
+/** Bot tirikmi — /api/health shuni ko'rsatadi. */
+export function telegramStatus(): { enabled: boolean; polling: boolean } {
+  return { enabled: bot !== null, polling: bot?.isRunning() ?? false };
+}
+
+/**
+ * Polling to'xtab qolsa qayta tiklaydi.
+ *
+ * Ilgari bu `void bot.start()` edi — aloqa uzilib polling o'lsa, xatolik
+ * jimgina yutilardi va bot boshqa hech qachon javob bermasdi. Buni faqat
+ * "nega bot jim?" deb so'ralgandagina bilib bo'lardi.
+ */
+function keepPolling(instance: Bot, attempt = 0): void {
+  instance
+    .start({ drop_pending_updates: true })
+    .then(() => {
+      console.warn('[telegram] polling to\'xtadi, qayta ulanmoqda...');
+      setTimeout(() => keepPolling(instance), 5_000);
+    })
+    .catch((err: unknown) => {
+      const kutish = Math.min(60, 5 * 2 ** attempt);
+      console.error(
+        `[telegram] polling uzildi: ${err instanceof Error ? err.message : String(err)}. ` +
+          `${kutish} soniyadan keyin qayta urinaman.`,
+      );
+      setTimeout(() => keepPolling(instance, attempt + 1), kutish * 1000);
+    });
 }
 
 /**
