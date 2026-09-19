@@ -12,6 +12,7 @@ interface NavItem {
 // TZ 8-bo'lim. Seans oynasi alohida sahifa emas — xaritadan ochiladi.
 const NAV: NavItem[] = [
   { to: '/', label: 'Joylar xaritasi' },
+  { to: '/bronlar', label: 'Bronlar' },
   { to: '/kassa', label: 'Tez kassa' },
   { to: '/smena', label: 'Smena' },
   { to: '/mijozlar', label: 'Mijozlar' },

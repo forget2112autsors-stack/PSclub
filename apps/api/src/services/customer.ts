@@ -219,6 +219,60 @@ export async function cancelBooking(bookingId: string, userId?: string) {
   });
 }
 
+export async function updateBooking(
+  bookingId: string,
+  input: {
+    stationId?: string;
+    customerId?: string | null;
+    startsAt?: Date;
+    note?: string | null;
+  },
+  userId?: string,
+) {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) fail('Bron topilmadi.');
+
+  if (input.stationId && input.startsAt) {
+    const yaqin = await prisma.booking.findFirst({
+      where: {
+        stationId: input.stationId,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        id: { not: bookingId },
+        startsAt: {
+          gte: new Date(input.startsAt.getTime() - 60 * 60_000),
+          lte: new Date(input.startsAt.getTime() + 60 * 60_000),
+        },
+      },
+    });
+    if (yaqin) fail('Bu vaqt oralig\'ida joy allaqachon bron qilingan.');
+  }
+
+  const updated = await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      ...(input.stationId !== undefined ? { stationId: input.stationId } : {}),
+      ...(input.customerId !== undefined ? { customerId: input.customerId } : {}),
+      ...(input.startsAt !== undefined ? { startsAt: input.startsAt } : {}),
+      ...(input.note !== undefined ? { note: input.note } : {}),
+    },
+    include: {
+      station: { select: { number: true, name: true, type: { select: { name: true } } } },
+      customer: { select: { id: true, fullName: true, phone: true } },
+    },
+  });
+
+  await audit({
+    userId: userId ?? null,
+    entity: 'Booking',
+    entityId: bookingId,
+    action: 'update',
+    oldValue: booking,
+    newValue: updated,
+  });
+
+  return updated;
+}
+
 // ------------------------------------------------------------- Paketlar va Bonus ---
 
 export async function addCustomerPackage(input: {

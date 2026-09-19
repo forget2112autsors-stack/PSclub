@@ -4,13 +4,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../lib/api.ts';
 import { isManager, useAuth } from '../store/auth.ts';
 import { Field, Modal, inputClass } from './Modal.tsx';
+import { ReceiptModal } from './ReceiptModal.tsx';
 
 interface Detail {
   id: string;
   status: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'CANCELLED';
   cancelReason?: string | null;
   startedAt: string;
+  endedAt?: string | null;
   station: { id: string; number: number; type: string };
+  club?: { id: string; name: string } | null;
+  operator?: { id: string; fullName: string } | null;
   customer: { id: string; fullName: string; balance: number } | null;
   gamepads: number;
   paymentMode: 'PREPAID' | 'POSTPAID';
@@ -71,6 +75,8 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   const [moveTarget, setMoveTarget] = useState('');
   const [canceling, setCanceling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [printOnClose, setPrintOnClose] = useState(true);
   const manager = isManager(useAuth((s) => s.user));
 
   const detail = useQuery({
@@ -203,7 +209,12 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
     },
     onSuccess: () => {
       refresh();
-      onClose();
+      if (printOnClose) {
+        setShowReceipt(true);
+        setClosing(false);
+      } else {
+        onClose();
+      }
     },
     onError,
   });
@@ -354,8 +365,34 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </div>
           )}
 
+          {d.status === 'CLOSED' && (
+            <div className="flex justify-between items-center rounded-xl bg-slate-950/60 p-3.5 border border-slate-800">
+              <span className="text-xs text-slate-400">Ushbu seans yopilgan.</span>
+              <button
+                type="button"
+                onClick={() => setShowReceipt(true)}
+                className="tap flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-500"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                Chek chiqarish
+              </button>
+            </div>
+          )}
+
           {d.status !== 'CLOSED' && d.status !== 'CANCELLED' && !closing && !moving && !canceling && (
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReceipt(true)}
+                className="tap flex items-center gap-1.5 rounded-lg bg-slate-800 px-3.5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-slate-700 hover:text-white"
+              >
+                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                Chek
+              </button>
               <button
                 type="button"
                 onClick={() => act.mutate(d.status === 'PAUSED' ? 'resume' : 'pause')}
@@ -588,6 +625,16 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
                 </Field>
               </div>
 
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={printOnClose}
+                  onChange={(e) => setPrintOnClose(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-800 text-emerald-600 focus:ring-0"
+                />
+                <span>Yopilgandan so'ng chek / kvitansiya chiqarish</span>
+              </label>
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -608,6 +655,34 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </section>
           )}
         </div>
+      )}
+
+      {showReceipt && d && (
+        <ReceiptModal
+          data={{
+            id: d.id,
+            status: d.status,
+            startedAt: d.startedAt,
+            endedAt: d.endedAt,
+            station: d.station,
+            club: d.club,
+            operator: d.operator,
+            customer: d.customer,
+            gamepads: d.gamepads,
+            paymentMode: d.paymentMode,
+            segments: d.segments,
+            items: d.items,
+            totals: d.totals,
+            payments: d.payments,
+            shares: shares > 1 ? shares : undefined,
+          }}
+          onClose={() => {
+            setShowReceipt(false);
+            if (d.status === 'CLOSED') {
+              onClose();
+            }
+          }}
+        />
       )}
     </Modal>
   );

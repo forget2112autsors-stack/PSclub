@@ -60,4 +60,28 @@ body {
   section {
     break-inside: avoid;
   }
+
+  body.printing-receipt {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body.printing-receipt * {
+    visibility: hidden;
+  }
+
+  body.printing-receipt #receipt-print-area,
+  body.printing-receipt #receipt-print-area * {
+    visibility: visible;
+  }
+
+  body.printing-receipt #receipt-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0 !important;
+    padding: 2mm !important;
+    box-shadow: none !important;
+  }
 }

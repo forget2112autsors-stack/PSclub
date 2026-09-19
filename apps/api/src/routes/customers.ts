@@ -14,7 +14,10 @@ import {
   expireStaleBookings,
   normalizePhone,
   topUpBalance,
+  updateBooking,
 } from '../services/customer.ts';
+import { openSession } from '../services/session.ts';
+import { currentShift } from '../services/shift.ts';
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -227,15 +230,36 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/bookings', async (req) => {
     await expireStaleBookings(req.user.clubId);
+    const query = req.query as { status?: string; date?: string };
+
+    const where: any = {
+      station: { clubId: req.user.clubId },
+    };
+
+    if (query.status && query.status !== 'ALL') {
+      if (query.status === 'ACTIVE') {
+        where.status = { in: ['PENDING', 'CONFIRMED'] };
+      } else {
+        where.status = query.status;
+      }
+    } else if (!query.status) {
+      where.status = { in: ['PENDING', 'CONFIRMED'] };
+    }
+
+    if (query.date) {
+      const d = new Date(query.date);
+      if (!isNaN(d.getTime())) {
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+        const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+        where.startsAt = { gte: start, lte: end };
+      }
+    }
+
     return prisma.booking.findMany({
-      where: {
-        station: { clubId: req.user.clubId },
-        status: { in: ['PENDING', 'CONFIRMED'] },
-        startsAt: { gte: new Date(Date.now() - 2 * 60 * 60_000) },
-      },
+      where,
       orderBy: { startsAt: 'asc' },
       include: {
-        station: { select: { number: true, type: { select: { name: true } } } },
+        station: { select: { id: true, number: true, name: true, type: { select: { name: true } } } },
         customer: { select: { id: true, fullName: true, phone: true } },
       },
     });
@@ -254,8 +278,81 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     return createBooking({ ...body, userId: req.user.sub });
   });
 
+  app.put('/api/bookings/:id', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        stationId: z.string().optional(),
+        customerId: z.string().nullable().optional(),
+        startsAt: z.coerce.date().optional(),
+        note: z.string().nullable().optional(),
+      })
+      .parse(req.body);
+
+    return updateBooking(id, body, req.user.sub);
+  });
+
+  app.post('/api/bookings/:id/activate', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        paymentMode: z.enum(['PREPAID', 'POSTPAID']).default('POSTPAID'),
+        gamepads: z.number().int().min(1).max(8).default(2),
+        tariffId: z.string().nullable().optional(),
+      })
+      .parse(req.body ?? {});
+
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: { station: true },
+    });
+    if (!booking) fail('Bron topilmadi.');
+    if (booking.status !== 'PENDING' && booking.status !== 'CONFIRMED') {
+      fail('Faqat faol bronni seansga aylantirish mumkin.');
+    }
+
+    const shift = await currentShift(req.user.clubId);
+    const session = await openSession({
+      stationId: booking.stationId,
+      customerId: booking.customerId,
+      operatorId: req.user.sub,
+      shiftId: shift.id,
+      paymentMode: body.paymentMode,
+      gamepads: body.gamepads,
+      tariffId: body.tariffId ?? null,
+      note: booking.note ? `Bron orqali: ${booking.note}` : 'Bron orqali',
+    });
+
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: { status: 'FULFILLED' },
+    });
+
+    await audit({
+      userId: req.user.sub,
+      entity: 'Booking',
+      entityId: booking.id,
+      action: 'activate',
+      newValue: { sessionId: session.id },
+    });
+
+    return session;
+  });
+
   app.delete('/api/bookings/:id', async (req) => {
-    await cancelBooking(idParam.parse(req.params).id, req.user.sub);
+    const { id } = idParam.parse(req.params);
+    const { permanent } = (req.query as { permanent?: string }) ?? {};
+    if (permanent === 'true') {
+      await prisma.booking.delete({ where: { id } });
+      await audit({
+        userId: req.user.sub,
+        entity: 'Booking',
+        entityId: id,
+        action: 'delete_permanent',
+      });
+      return { ok: true };
+    }
+    await cancelBooking(id, req.user.sub);
     return { ok: true };
   });
 

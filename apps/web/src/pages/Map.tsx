@@ -90,8 +90,23 @@ export function StationMap() {
     refetchInterval: 30_000,
   });
 
+  const bookingsQuery = useQuery({
+    queryKey: ['active-bookings-map'],
+    queryFn: () =>
+      api<
+        {
+          id: string;
+          stationId: string;
+          startsAt: string;
+          customer: { fullName: string } | null;
+        }[]
+      >('/api/bookings?status=ACTIVE'),
+    refetchInterval: 30_000,
+  });
+
   const onRefresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: ['map'] });
+    void client.invalidateQueries({ queryKey: ['active-bookings-map'] });
   }, [client]);
   const { connected } = useRealtime(onRefresh);
 
@@ -103,6 +118,22 @@ export function StationMap() {
   const fetchedAt = query.dataUpdatedAt || Date.now();
   const stations = query.data?.stations ?? [];
   const types = Array.from(new Set(stations.map((s) => s.type)));
+
+  const nextBookingByStation = new Map<string, { time: string; customer: string }>();
+  if (bookingsQuery.data) {
+    const now = new Date();
+    for (const b of bookingsQuery.data) {
+      const bTime = new Date(b.startsAt);
+      if (bTime.getTime() > now.getTime() - 15 * 60_000 && bTime.getTime() < now.getTime() + 12 * 3600_000) {
+        if (!nextBookingByStation.has(b.stationId)) {
+          nextBookingByStation.set(b.stationId, {
+            time: bTime.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }),
+            customer: b.customer?.fullName ?? 'Mehmon',
+          });
+        }
+      }
+    }
+  }
 
   const filteredStations = stations.filter((station) => {
     if (search.trim() && !String(station.number).includes(search.trim())) {
@@ -231,6 +262,14 @@ export function StationMap() {
                 <span className="text-lg font-semibold">{station.number}</span>
                 <span className="text-xs text-slate-400">{station.type}</span>
               </div>
+
+              {nextBookingByStation.get(station.id) && (
+                <div className="mt-1.5 flex items-center gap-1 rounded bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 text-[10px] text-amber-300">
+                  <span>📅</span>
+                  <span className="font-semibold">{nextBookingByStation.get(station.id)!.time}</span>
+                  <span className="truncate text-amber-400/80">({nextBookingByStation.get(station.id)!.customer})</span>
+                </div>
+              )}
 
               {!session ? (
                 <>

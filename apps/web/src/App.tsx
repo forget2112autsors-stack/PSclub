@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { Shell } from './components/Shell.tsx';
 import { Audit } from './pages/Audit.tsx';
+import { Bookings } from './pages/Bookings.tsx';
 import { Customers } from './pages/Customers.tsx';
 import { Login } from './pages/Login.tsx';
 import { StationMap } from './pages/Map.tsx';
@@ -43,6 +44,7 @@ export function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route index element={<StationMap />} />
+            <Route path="bronlar" element={<Bookings />} />
             <Route path="kassa" element={<QuickSale />} />
             <Route path="smena" element={<Shift />} />
             <Route path="mijozlar" element={<Customers />} />

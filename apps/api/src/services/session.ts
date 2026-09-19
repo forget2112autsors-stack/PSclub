@@ -7,19 +7,21 @@ import { loadTariffs } from './tariff-loader.ts';
 import { notifyOwner } from '../telegram.ts';
 
 const SESSION_WITH_DETAIL = {
-  station: { include: { type: true } },
+  station: { include: { type: true, club: { select: { id: true, name: true } } } },
   pauses: true,
   items: { include: { product: { select: { name: true } } } },
   payments: true,
   customer: { select: { id: true, fullName: true, balance: true } },
+  operator: { select: { id: true, fullName: true } },
 } as const;
 
 type SessionRow = Awaited<ReturnType<typeof prisma.session.findFirstOrThrow>> & {
-  station: { id: string; number: number; typeId: string; type: { name: string } };
+  station: { id: string; number: number; typeId: string; type: { name: string }; club?: { id: string; name: string } };
   pauses: { startedAt: Date; endedAt: Date | null }[];
   items: { id: string; qty: number; unitPrice: number; amount: number; product: { name: string } }[];
   payments: { amount: number; method: string }[];
   customer: { id: string; fullName: string; balance: number } | null;
+  operator?: { id: string; fullName: string } | null;
 };
 
 function pauseIntervals(pauses: { startedAt: Date; endedAt: Date | null }[], upTo: Date): Interval[] {
@@ -984,6 +986,8 @@ export async function sessionDetail(sessionId: string) {
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     station: { id: session.station.id, number: session.station.number, type: session.station.type.name },
+    club: session.station.club ? { id: session.station.club.id, name: session.station.club.name } : null,
+    operator: session.operator ? { id: session.operator.id, fullName: session.operator.fullName } : null,
     customer: session.customer,
     gamepads: session.gamepads,
     paymentMode: session.paymentMode,
