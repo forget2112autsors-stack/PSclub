@@ -138,12 +138,16 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     const customer = await prisma.customer.findFirst({ where: { id, clubId: req.user.clubId } });
     if (!customer) fail('Mijoz topilmadi.');
 
-    const [sessionsCount, packagesCount] = await Promise.all([
+    // Moliyaviy iz qoldirgan mijozni o'chirib bo'lmaydi: yozuvlar tashqi
+    // kalit bilan bog'langan va hisobot buzilardi. Bunday mijoz arxivlanadi.
+    const [sessionsCount, paymentsCount, balanceTxCount, packagesCount] = await Promise.all([
       prisma.session.count({ where: { customerId: id } }),
+      prisma.payment.count({ where: { customerId: id } }),
+      prisma.customerBalanceTx.count({ where: { customerId: id } }),
       prisma.customerPackage.count({ where: { customerId: id } }),
     ]);
 
-    if (sessionsCount > 0 || packagesCount > 0) {
+    if (sessionsCount > 0 || paymentsCount > 0 || balanceTxCount > 0 || packagesCount > 0) {
       await prisma.customer.update({ where: { id }, data: { isBlocked: true } });
       await audit({
         userId: req.user.sub,
@@ -156,7 +160,10 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
       return { archived: true, message: 'Mijoz faoliyat ko\'rsatgani uchun qora ro\'yxatga olindi (arxivlandi).' };
     }
 
-    await prisma.customer.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.booking.deleteMany({ where: { customerId: id } }),
+      prisma.customer.delete({ where: { id } }),
+    ]);
     await audit({
       userId: req.user.sub,
       entity: 'Customer',
@@ -312,6 +319,7 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const shift = await currentShift(req.user.clubId);
+    if (!shift) fail('Smena ochilmagan — avval smenani oching.');
     const session = await openSession({
       stationId: booking.stationId,
       customerId: booking.customerId,
@@ -356,35 +364,4 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // Mijozlar ro'yxatini tozalash faqat administrator ishi.
-  //
-  // Moliyaviy tarixi bor mijoz o'chirilmaydi: balans harakatlari va to'lovlar
-  // kassa hisobotiga kiradi, ularni yo'qotish hisobotni buzadi. Bunday mijoz
-  // qora ro'yxatga qo'yiladi.
-  app.delete('/api/customers/:id', async (req, reply) => {
-    if (!requireManager(req, reply)) return;
-    const { id } = idParam.parse(req.params);
-
-    const [sessions, payments, balanceTxs, packages] = await Promise.all([
-      prisma.session.count({ where: { customerId: id } }),
-      prisma.payment.count({ where: { customerId: id } }),
-      prisma.customerBalanceTx.count({ where: { customerId: id } }),
-      prisma.customerPackage.count({ where: { customerId: id } }),
-    ]);
-
-    const tarix = sessions + payments + balanceTxs + packages;
-    if (tarix > 0) {
-      return reply.code(400).send({
-        error:
-          'Bu mijozda seans yoki to\'lov tarixi bor — o\'chirib bo\'lmaydi. ' +
-          'O\'rniga qora ro\'yxatga qo\'ying.',
-      });
-    }
-
-    await prisma.$transaction([
-      prisma.booking.deleteMany({ where: { customerId: id } }),
-      prisma.customer.delete({ where: { id } }),
-    ]);
-    return { ok: true };
-  });
 }

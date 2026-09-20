@@ -683,15 +683,15 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         where: { clubId },
         include: { packages: true, balanceTxs: { take: 50, orderBy: { createdAt: 'desc' } } },
       }),
-      prisma.supplier.findMany({ where: { clubId }, include: { invoices: true } }),
+      prisma.supplier.findMany({ where: { clubId }, include: { movements: true, expenses: true } }),
       prisma.shift.findMany({ where: { clubId }, orderBy: { openedAt: 'desc' }, take: 100 }),
       prisma.session.findMany({
         where: { station: { clubId } },
-        include: { orderItems: true, segments: true, pauses: true },
+        include: { items: true, segments: true, pauses: true },
         orderBy: { startedAt: 'desc' },
         take: 200,
       }),
-      prisma.expense.findMany({ where: { clubId }, orderBy: { createdAt: 'desc' }, take: 200 }),
+      prisma.expense.findMany({ where: { shift: { clubId } }, orderBy: { createdAt: 'desc' }, take: 200 }),
       prisma.booking.findMany({ where: { station: { clubId } }, take: 100 }),
     ]);
 
