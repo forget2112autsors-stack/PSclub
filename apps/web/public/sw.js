@@ -1,5 +1,5 @@
 // PS Klub PWA Service Worker (QM-7 & TZ 7.3)
-const CACHE_NAME = 'psklub-shell-v2';
+const CACHE_NAME = 'psklub-shell-v3';
 const PRECACHE = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
