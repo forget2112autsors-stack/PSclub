@@ -33,6 +33,8 @@ const openBody = z.object({
   stationId: z.string().min(1),
   tariffId: z.string().nullable().default(null),
   customerId: z.string().nullable().default(null),
+  customerName: z.string().nullable().optional(),
+  customerPhone: z.string().nullable().optional(),
   paymentMode: z.enum(['PREPAID', 'POSTPAID']),
   gamepads: z.number().int().min(1).max(8).default(2),
   creditLimit: z.number().int().min(0).optional(),

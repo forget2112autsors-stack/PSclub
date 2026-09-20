@@ -11,29 +11,36 @@ export async function currentShift(clubId: string) {
 }
 
 export async function openShift(clubId: string, operatorId: string, openingCash: number) {
-  const shift = await prisma.$transaction(async (tx) => {
-    const existing = await tx.shift.findFirst({ where: { clubId, status: 'OPEN' } });
-    if (existing) fail('Ochiq smena allaqachon bor — avval uni yoping.');
+  try {
+    const shift = await prisma.$transaction(async (tx) => {
+      const existing = await tx.shift.findFirst({ where: { clubId, status: 'OPEN' } });
+      if (existing) fail('Ochiq smena allaqachon bor — avval uni yoping.');
 
-    return tx.shift.create({
-      data: { clubId, operatorId, openingCash },
+      return tx.shift.create({
+        data: { clubId, operatorId, openingCash },
+      });
     });
-  });
-  await audit({
-    userId: operatorId,
-    entity: 'Shift',
-    entityId: shift.id,
-    action: 'open',
-    newValue: { openingCash },
-  });
+    await audit({
+      userId: operatorId,
+      entity: 'Shift',
+      entityId: shift.id,
+      action: 'open',
+      newValue: { openingCash },
+    });
 
-  const operator = await prisma.appUser.findUnique({ where: { id: operatorId } });
-  void notifyOwner(
-    ['🟢 <b>Smena ochildi</b>', operator?.fullName ?? '', `Kassada: ${summa(openingCash)} so'm`]
-      .filter(Boolean)
-      .join('\n'),
-  );
-  return shift;
+    const operator = await prisma.appUser.findUnique({ where: { id: operatorId } });
+    void notifyOwner(
+      ['🟢 <b>Smena ochildi</b>', operator?.fullName ?? '', `Kassada: ${summa(openingCash)} so'm`]
+        .filter(Boolean)
+        .join('\n'),
+    );
+    return shift;
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
+      fail('Ochiq smena allaqachon bor — avval uni yoping.');
+    }
+    throw err;
+  }
 }
 
 /** Smenaning joriy holati — kassada qancha bo'lishi kerakligi bilan. */

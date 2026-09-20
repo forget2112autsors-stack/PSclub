@@ -38,47 +38,99 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
   const [startedAtStr, setStartedAtStr] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState('');
-  const [qidiruv, setQidiruv] = useState('');
 
+  // Mijoz ma'lumotlari: ism va telefon alohida maydonlarda
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Qidiruv so'rovi (telefon yoki ism bo'yicha)
+  const searchQ = customerPhone.trim() || customerName.trim();
   const customers = useQuery({
-    queryKey: ['customers', qidiruv],
-    queryFn: () => api<Customer[]>(`/api/customers?q=${encodeURIComponent(qidiruv)}`),
+    queryKey: ['customers', searchQ],
+    queryFn: () => api<Customer[]>(`/api/customers?q=${encodeURIComponent(searchQ)}`),
+    enabled: searchQ.length >= 2 && !selectedCustomer,
   });
-  const tanlangan = (customers.data ?? []).find((c) => c.id === customerId) ?? null;
+
+  const matchingCustomers =
+    !selectedCustomer && showSuggestions && searchQ.length >= 2 ? (customers.data ?? []).slice(0, 6) : [];
+
+  const handleSelectCustomer = (c: Customer) => {
+    setSelectedCustomer(c);
+    setCustomerName(c.fullName);
+    setCustomerPhone(c.phone ?? '');
+    setShowSuggestions(false);
+  };
+
+  const handleClearCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setShowSuggestions(false);
+  };
+
+  const handleNameChange = (val: string) => {
+    setCustomerName(val);
+    if (selectedCustomer && val !== selectedCustomer.fullName) {
+      setSelectedCustomer(null);
+    }
+    setShowSuggestions(true);
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setCustomerPhone(val);
+    if (selectedCustomer && val !== (selectedCustomer.phone ?? '')) {
+      setSelectedCustomer(null);
+    }
+    setShowSuggestions(true);
+  };
 
   const customerDetail = useQuery({
-    queryKey: ['customer-open-detail', customerId],
+    queryKey: ['customer-open-detail', selectedCustomer?.id],
     queryFn: () =>
       api<{ packages: { id: string; name: string; remainingMinutes: number; expiresAt: string | null }[] }>(
-        `/api/customers/${customerId}`,
+        `/api/customers/${selectedCustomer!.id}`,
       ),
-    enabled: !!customerId,
+    enabled: !!selectedCustomer?.id,
   });
 
   const tariffs = useQuery({ queryKey: ['tariffs'], queryFn: () => api<Tariff[]>('/api/tariffs') });
   const packages = (tariffs.data ?? []).filter((t) => t.kind === 'PACKAGE');
 
   const open = useMutation({
-    mutationFn: () =>
-      api('/api/sessions', {
+    mutationFn: () => {
+      const digits = customerPhone.replace(/\D/g, '');
+      if (customerPhone.trim() && digits.length > 0 && digits.length < 7) {
+        throw new Error("Telefon raqami kamida 7 ta raqamdan iborat bo'lishi kerak.");
+      }
+
+      return api('/api/sessions', {
         method: 'POST',
         body: JSON.stringify({
           stationId,
           paymentMode: mode,
           gamepads,
           tariffId: packageId || null,
-          customerId: customerId || null,
+          customerId: selectedCustomer?.id || null,
+          customerName: customerName.trim() || null,
+          customerPhone: customerPhone.trim() || null,
           prepaidMinutes: mode === 'PREPAID' ? Number(minutes) || null : null,
           note: note.trim() || null,
           startedAt: startedAtStr ? new Date(startedAtStr).toISOString() : undefined,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['map'] });
+      void client.invalidateQueries({ queryKey: ['customers'] });
       onClose();
     },
-    onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik.'),
+    onError: (err: unknown) => {
+      if (err instanceof ApiError) setError(err.message);
+      else if (err instanceof Error) setError(err.message);
+      else setError('Kutilmagan xatolik.');
+    },
   });
 
   return (
@@ -144,26 +196,52 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
           </Field>
         )}
 
-        <div>
-          <span className="mb-1 block text-xs text-slate-400">
-            Mijoz {mode === 'POSTPAID' && <span className="text-amber-400">— qarz yozish uchun kerak</span>}
-          </span>
+        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-300">
+              Mijoz{' '}
+              {mode === 'POSTPAID' && <span className="font-normal text-amber-400">— qarz yozish uchun kerak</span>}
+            </span>
+            {selectedCustomer && (
+              <button
+                type="button"
+                onClick={handleClearCustomer}
+                className="text-xs text-rose-400 transition hover:text-rose-300"
+              >
+                Mijozni bekor qilish
+              </button>
+            )}
+          </div>
 
-          {tanlangan ? (
+          {selectedCustomer ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2.5 text-sm">
-                <span>
-                  {tanlangan.fullName}
-                  <span className={`ml-2 text-xs ${tanlangan.balance < 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                    balans {tanlangan.balance.toLocaleString('uz-UZ')}
-                  </span>
-                </span>
+              <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-slate-800/90 px-3 py-2.5 text-sm">
+                <div>
+                  <span className="font-semibold text-white">{selectedCustomer.fullName}</span>
+                  {selectedCustomer.phone && (
+                    <span className="ml-2 font-mono text-xs text-slate-400">{selectedCustomer.phone}</span>
+                  )}
+                  <div className="mt-0.5">
+                    <span
+                      className={`text-xs ${
+                        selectedCustomer.balance < 0 ? 'font-medium text-amber-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      balans: {selectedCustomer.balance.toLocaleString('uz-UZ')} so'm
+                    </span>
+                    {selectedCustomer.isBlocked && (
+                      <span className="ml-2 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] text-red-300">
+                        qora ro'yxat
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setCustomerId('')}
-                  className="text-xs text-slate-400 hover:text-slate-200"
+                  onClick={handleClearCustomer}
+                  className="rounded px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-700 hover:text-white"
                 >
-                  bekor qilish
+                  O'zgartirish
                 </button>
               </div>
 
@@ -181,44 +259,76 @@ export function SessionOpen({ stationId, stationNumber, gamepadCount, onClose }:
               )}
             </div>
           ) : (
-            <>
-              <input
-                value={qidiruv}
-                onChange={(e) => setQidiruv(e.target.value)}
-                placeholder="Ism yoki telefon — bo'sh qoldirsangiz mehmon"
-                className={inputClass}
-              />
-              {qidiruv.trim().length > 0 && (
-                <ul className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-slate-950/60">
-                  {(customers.data ?? []).slice(0, 6).map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        disabled={c.isBlocked}
-                        onClick={() => {
-                          setCustomerId(c.id);
-                          setQidiruv('');
-                        }}
-                        className="tap w-full px-3 py-2 text-left text-sm transition hover:bg-slate-800 disabled:opacity-40"
-                      >
-                        {c.fullName}
-                        <span className="ml-2 text-xs text-slate-500">{c.phone}</span>
-                        {c.isBlocked && <span className="ml-2 text-xs text-red-400">qora ro'yxat</span>}
-                      </button>
-                    </li>
-                  ))}
-                  {customers.data?.length === 0 && (
-                    <li className="px-3 py-2 text-sm text-slate-500">Topilmadi.</li>
-                  )}
-                </ul>
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Field label="Mijoz ismi (ixtiyoriy)">
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="Masalan: Sardor"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Telefon raqami (ixtiyoriy)">
+                  <input
+                    type="tel"
+                    value={customerPhone}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    placeholder="+998 90 123 45 67"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
+              {matchingCustomers.length > 0 && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-xl">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Mavjud mijozlar (tanlash uchun bosing):
+                  </div>
+                  <ul className="max-h-36 space-y-1 overflow-y-auto">
+                    {matchingCustomers.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          disabled={c.isBlocked}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectCustomer(c);
+                          }}
+                          className="tap flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-800 disabled:opacity-40"
+                        >
+                          <div>
+                            <span className="font-medium text-slate-200">{c.fullName}</span>
+                            {c.phone && <span className="ml-2 font-mono text-xs text-slate-400">{c.phone}</span>}
+                            {c.isBlocked && <span className="ml-2 text-xs text-red-400">qora ro'yxat</span>}
+                          </div>
+                          <span
+                            className={`text-xs ${
+                              c.balance < 0 ? 'font-medium text-amber-400' : 'text-slate-400'
+                            }`}
+                          >
+                            {c.balance.toLocaleString('uz-UZ')} so'm
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-            </>
+
+              {!customerName && !customerPhone && (
+                <p className="text-[11px] text-slate-500">
+                  Bo'sh qoldirilsa seans "Mehmon" nomiga ochiladi.
+                </p>
+              )}
+            </div>
           )}
         </div>
 
-        {mode === 'POSTPAID' && !customerId && (
+        {mode === 'POSTPAID' && !selectedCustomer && !customerName.trim() && !customerPhone.trim() && (
           <p className="rounded-lg bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-            Mijoz tanlanmasa seans mehmon nomiga ochiladi va qarz bilan yopib bo'lmaydi —
+            Mijoz kiritilmasa seans mehmon nomiga ochiladi va qarz bilan yopib bo'lmaydi —
             yopishda to'liq to'lov olinadi.
           </p>
         )}

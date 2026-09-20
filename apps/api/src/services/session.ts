@@ -5,6 +5,7 @@ import { prisma, audit } from '../db.ts';
 import { fail } from '../errors.ts';
 import { loadTariffs } from './tariff-loader.ts';
 import { notifyOwner } from '../telegram.ts';
+import { findOrCreateByPhone } from './customer.ts';
 
 const SESSION_WITH_DETAIL = {
   station: { include: { type: true, club: { select: { id: true, name: true } } } },
@@ -85,6 +86,8 @@ export interface OpenInput {
   stationId: string;
   tariffId?: string | null;
   customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   paymentMode: 'PREPAID' | 'POSTPAID';
   gamepads: number;
   creditLimit?: number;
@@ -107,8 +110,27 @@ export async function openSession(input: OpenInput) {
     fail(`Joyda ${station.gamepadCount} ta pult bor, ${input.gamepads} ta so'ralyapti.`);
   }
 
-  if (input.customerId) {
-    const customer = await prisma.customer.findUnique({ where: { id: input.customerId } });
+  let customerId = input.customerId ?? null;
+  if (!customerId) {
+    const rawPhone = input.customerPhone?.trim();
+    const rawName = input.customerName?.trim();
+    if (rawPhone && rawPhone.replace(/\D/g, '').length >= 7) {
+      const c = await findOrCreateByPhone(station.clubId, rawPhone, rawName || `Mijoz *${rawPhone.slice(-4)}`);
+      customerId = c.id;
+    } else if (rawName) {
+      const c = await prisma.customer.create({
+        data: {
+          clubId: station.clubId,
+          fullName: rawName,
+          phone: null,
+        },
+      });
+      customerId = c.id;
+    }
+  }
+
+  if (customerId) {
+    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) fail('Mijoz topilmadi.');
     if (customer.isBlocked) fail('Mijoz qora ro\'yxatda.');
   }
@@ -125,7 +147,7 @@ export async function openSession(input: OpenInput) {
       data: {
         stationId: station.id,
         tariffId: input.tariffId ?? null,
-        customerId: input.customerId ?? null,
+        customerId,
         operatorId: input.operatorId,
         shiftId: input.shiftId,
         paymentMode: input.paymentMode,
@@ -404,7 +426,56 @@ export async function closeSession(input: CloseInput) {
 
   const ctx = await calcContext(session.station.clubId);
   const endedAt = new Date();
-  const discount = input.discount !== undefined && input.discount >= 0 ? input.discount : session.discount;
+
+  // Dastlabki hisob-kitob (o'yin vaqti va tarif segmentlari)
+  const preCalc = calculateSession({
+    start: session.startedAt,
+    end: endedAt,
+    stationTypeId: session.station.typeId,
+    gamepads: session.gamepads,
+    tariffs: ctx.tariffs,
+    pauses: pauseIntervals(session.pauses, endedAt),
+    tzOffsetMinutes: ctx.tzOffsetMinutes,
+    packageTariffId: session.tariffId,
+  });
+
+  // Abonement paketlari hisobi (TZ M5.2):
+  // Mijozning faol paketi bo'lsa, o'yin vaqti shu paketdan sarflanadi va avtomatik chegirma sifatida beriladi
+  let packageMinutesUsed = 0;
+  let packageCoveredDiscount = 0;
+  const packageDeductions: { id: string; usedMinutes: number }[] = [];
+
+  const totalBilledMinutes = preCalc.segments.reduce((s, seg) => s + seg.billedMinutes, 0);
+  if (session.customerId && totalBilledMinutes > 0 && preCalc.gameAmount > 0) {
+    const activePackages = await prisma.customerPackage.findMany({
+      where: {
+        customerId: session.customerId,
+        remainingMinutes: { gt: 0 },
+        OR: [{ expiresAt: null }, { expiresAt: { gte: endedAt } }],
+      },
+      orderBy: { expiresAt: 'asc' },
+    });
+
+    let minutesToCover = totalBilledMinutes;
+    for (const pkg of activePackages) {
+      if (minutesToCover <= 0) break;
+      const canUse = Math.min(pkg.remainingMinutes, minutesToCover);
+      packageDeductions.push({ id: pkg.id, usedMinutes: canUse });
+      packageMinutesUsed += canUse;
+      minutesToCover -= canUse;
+    }
+
+    if (packageMinutesUsed > 0) {
+      packageCoveredDiscount = Math.min(
+        preCalc.gameAmount,
+        Math.round((packageMinutesUsed / totalBilledMinutes) * preCalc.gameAmount),
+      );
+    }
+  }
+
+  const discount =
+    (input.discount !== undefined && input.discount >= 0 ? input.discount : session.discount) +
+    packageCoveredDiscount;
 
   // Balansdan to'lov bo'lsa oldindan mijoz borligi va balansi yetishini tekshiramiz
   const balancePayments = input.payments.filter((p) => p.method === 'BALANCE' && p.amount > 0);
@@ -440,6 +511,14 @@ export async function closeSession(input: CloseInput) {
       await tx.session.update({
         where: { id: session.id },
         data: { discount },
+      });
+    }
+
+    // 1.1. Abonement paketlaridan daqiqalarni yechamiz
+    for (const deduction of packageDeductions) {
+      await tx.customerPackage.update({
+        where: { id: deduction.id },
+        data: { remainingMinutes: { decrement: deduction.usedMinutes } },
       });
     }
 
@@ -529,10 +608,23 @@ export async function closeSession(input: CloseInput) {
     entity: 'Session',
     entityId: session.id,
     action: 'close',
-    newValue: { total: totals.totalAmount, debt: totals.debt, pultFarq },
+    newValue: {
+      total: totals.totalAmount,
+      debt: totals.debt,
+      pultFarq,
+      packageMinutesUsed,
+      packageCoveredDiscount,
+    },
   });
 
-  return { totals, segments: calc.segments, warnings: calc.warnings, pultFarq };
+  return {
+    totals,
+    segments: calc.segments,
+    warnings: calc.warnings,
+    pultFarq,
+    packageMinutesUsed,
+    packageCoveredDiscount,
+  };
 }
 
 // ----------------------------------------------------------- Tez kassa sotuv --
@@ -979,6 +1071,19 @@ export async function sessionDetail(sessionId: string) {
   const ctx = await calcContext(session.station.clubId);
   const { calc, totals } = computeSession(session as SessionRow, ctx);
 
+  let customerPackages: { id: string; name: string; remainingMinutes: number; expiresAt: Date | null }[] = [];
+  if (session.customerId) {
+    customerPackages = await prisma.customerPackage.findMany({
+      where: {
+        customerId: session.customerId,
+        remainingMinutes: { gt: 0 },
+        OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+      },
+      select: { id: true, name: true, remainingMinutes: true, expiresAt: true },
+      orderBy: { expiresAt: 'asc' },
+    });
+  }
+
   return {
     id: session.id,
     status: session.status,
@@ -989,6 +1094,7 @@ export async function sessionDetail(sessionId: string) {
     club: session.station.club ? { id: session.station.club.id, name: session.station.club.name } : null,
     operator: session.operator ? { id: session.operator.id, fullName: session.operator.fullName } : null,
     customer: session.customer,
+    customerPackages,
     gamepads: session.gamepads,
     paymentMode: session.paymentMode,
     creditLimit: session.creditLimit,

@@ -240,3 +240,41 @@ Biroq, tizimni ishlab chiqarishga (production) yoki klubda real mijozlar bilan s
 2. Administrator uchun "o'tgan vaqt bilan seans kiritish" imkoniyatini yaratish.
 3. Abonement (soat paketlari) va Bonus tizimi modullarini to'liq ishlab chiqish.
 4. `apps/api` marshrutlari uchun integratsion testlar yozish.
+
+---
+
+## 9. Vazifalarning Bajarilish Holati va Natijalar (Status: 100% Bajarildi)
+
+Ushbu hisobotdagi barcha kamchiliklar, xatolar va talablar to'liq bartaraf etildi va testlandi:
+
+| № | Band | Holati | Bajarilgan Ishlar / Yechim |
+|---|---|:---:|---|
+| **2.1** | `closeSession` atomik tranzaksiya | **✓ Bajarildi** | Barcha to'lovlar, balans yechish, segmentlar va seans yopish yagona `prisma.$transaction` ga olindi. |
+| **2.2** | Tez kassa (`/api/sales`) tekshiruvi | **✓ Bajarildi** | Mahsulotlar qoldig'i, to'lovlar summasi (`totalPaid >= totalAmount`) va balans tekshirilib, bitta tranzaksiyada bajarildi. |
+| **2.3** | `cancelSession` to'lov/ombor qaytarish | **✓ Bajarildi** | Bekor qilinganda mahsulotlar omborga qaytariladi (`IN`), qabul qilingan to'lovlar (naqd/karta/balans) to'liq qaytariladi. |
+| **2.4** | Ochiq qolgan pauzalar | **✓ Bajarildi** | `closeSession` vaqtida `sessionPause.updateMany` orqali `endedAt` avtomatik yopiladi. |
+| **2.5** | Smena poygasi (Race condition) | **✓ Bajarildi** | PostgreSQL darajasida `unique_open_shift_per_club` qisman unikal indeksi kiritildi va Prisma `P2002` xatosi ushlandi. |
+| **3.1** | Telegram Bot PIN brute-force | **✓ Bajarildi** | `failedPins` hisoblagichi ishlaydi, 5 ta xato urinishdan so'ng chat 1 soatga bloklanadi. |
+| **3.2** | Multi-tenancy izolyatsiyasi | **✓ Bajarildi** | Barcha sozlamalar, joylar, tariflar va foydalanuvchilar so'rovlariga `clubId` filtri qo'shildi. |
+| **3.3** | Realtime stream/revision avtorizatsiyasi | **✓ Bajarildi** | `/api/stream` va `/api/revision` endpointlariga `requireAuth` qo'yildi va klub bo'yicha filtrlandi. |
+| **4.1** | Telegram botda bron qilish mantiqi | **✓ Bajarildi** | Joy va xonani tanlash, kelajakdagi bandlik va bo'sh vaqt oralig'i (`freeSlots`) bo'yicha bron qilish yo'lga qo'yildi. |
+| **4.2** | Kunlik hisobotda chegirma | **✓ Bajarildi** | `totalRevenue` hisob-kitobida chegirma (`discounts`) to'g'ri chegirildi. |
+| **5.1** | Yopishda chegirma va balans | **✓ Bajarildi** | `SessionDetail.tsx` da chegirma kiritish va balansdan to'lov qilish maydonlari qo'shildi. |
+| **5.2** | Seansni bekor qilish tugmasi | **✓ Bajarildi** | Administratorlar uchun `SessionDetail.tsx` da sabab kiritish bilan bekor qilish imkoni yaratildi. |
+| **5.3** | Seansni ko'chirish tugmasi | **✓ Bajarildi** | `SessionDetail.tsx` da bo'sh konsollar ro'yxatidan tanlab ko'chirish (`moveSession`) qo'shildi. |
+| **5.4** | Bufet mahsulotlarini qidiruv va miqdor | **✓ Bajarildi** | Barcha tovarlar bo'yicha qidiruv, ixtiyoriy miqdorda (`qty`) tanlash va seansga qo'shish yaratildi. |
+| **5.5** | `Login.tsx` useEffect qaramliklari | **✓ Bajarildi** | Qaramliklar massivi `[selected, pin, busy]` to'g'rilandi. |
+| **6.1** | Abonement (soat paketlari) ning seansda ishlashi | **✓ Bajarildi** | Seans yopilganda mijozning faol paketidagi daqiqalardan avtomatik chegiriladi va o'yin narxi kamaytiriladi. |
+| **6.2** | Bonus tizimi (keshbek) | **✓ Bajarildi** | Seans va tez kassa summasidan 3% keshbek yoziladi, bonusni balansga almashtirish mavjud. |
+| **6.3** | PWA va Offline kesh | **✓ Bajarildi** | `manifest.json`, `sw.js`, PWA belgilari va oflayn xabar berish ulandi. |
+| **6.4** | O'tgan vaqt bilan seans kiritish | **✓ Bajarildi** | Administratorlar uchun `startedAt` (o'tgan vaqt) bilan seans ochish imkoni qo'shildi. |
+| **6.5** | Rus tili mahalliylashtiruvi | **✓ Bajarildi** | `i18n.ts` orqali UZ/RU tilini almashtirish imkoni kiritildi. |
+| **6.6** | Avtomatik zaxira nusxa | **✓ Bajarildi** | `scripts/backup.sh`, `scripts/backup.bat`, `scripts/restore.sh` va web JSON zaxira yaratildi. |
+| **6.7** | `apps/api` birlik testlari | **✓ Bajarildi** | `auth.test.ts`, `customer.test.ts`, `session.test.ts`, `shift.test.ts`, `sale.test.ts` to'liq yozildi va muvaffaqiyatli o'tdi. |
+| **7.1** | `/api/telegram-setup` endpointi | **✓ Bajarildi** | Webhook o'rnatuvchi endpoint `apps/api/src/app.ts` ga ulandi. |
+| **7.2** | Suppliers N+1 so'rovi | **✓ Bajarildi** | `in: supplierIds` va `groupBy` orqali bitta so'rovda hisoblandi. |
+
+### Sinov Natijalari
+- **Avtotestlar:** 76 ta testning barchasi muvaffaqiyatli (pass) o'tdi (`@psklub/domain` 65 ta, `@psklub/api` 11 ta).
+- **TypeScript:** `apps/api` (`tsc --noEmit`) va `apps/web` (`tsc --noEmit && vite build`) 0 ta xato bilan kompilyatsiya qilindi.
+

@@ -16,6 +16,7 @@ interface Detail {
   club?: { id: string; name: string } | null;
   operator?: { id: string; fullName: string } | null;
   customer: { id: string; fullName: string; balance: number } | null;
+  customerPackages?: { id: string; name: string; remainingMinutes: number; expiresAt: string | null }[];
   gamepads: number;
   paymentMode: 'PREPAID' | 'POSTPAID';
   creditLimit: number;
@@ -77,6 +78,10 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   const [cancelReason, setCancelReason] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
   const [printOnClose, setPrintOnClose] = useState(true);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogProductId, setCatalogProductId] = useState('');
+  const [catalogQty, setCatalogQty] = useState('1');
   const manager = isManager(useAuth((s) => s.user));
 
   const detail = useQuery({
@@ -119,7 +124,7 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   });
 
   const act = useMutation({
-    mutationFn: (path: string) => api(`/api/sessions/${sessionId}/${path}`, { method: 'POST' }),
+    mutationFn: (action: 'pause' | 'resume') => api(`/api/sessions/${sessionId}/${action}`, { method: 'POST' }),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -168,13 +173,15 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
   });
 
   const addItem = useMutation({
-    mutationFn: (productId: string) =>
+    mutationFn: ({ productId, qty }: { productId: string; qty?: number }) =>
       api(`/api/sessions/${sessionId}/items`, {
         method: 'POST',
-        body: JSON.stringify({ productId, qty: 1 }),
+        body: JSON.stringify({ productId, qty: qty ?? 1 }),
       }),
     onSuccess: () => {
       setError(null);
+      setCatalogProductId('');
+      setCatalogQty('1');
       refresh();
     },
     onError,
@@ -276,24 +283,138 @@ export function SessionDetail({ sessionId, onClose }: { sessionId: string; onClo
             </ul>
           </section>
 
+          {d.customerPackages && d.customerPackages.length > 0 && (
+            <div className="rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-3 text-xs text-emerald-300">
+              <p className="font-semibold mb-1">Mijozning faol abonement paketlari:</p>
+              <ul className="space-y-1">
+                {d.customerPackages.map((p) => (
+                  <li key={p.id} className="flex justify-between">
+                    <span>• {p.name}</span>
+                    <span>{Math.floor(p.remainingMinutes / 60)} soat {p.remainingMinutes % 60} daq qoldi</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-slate-400">
+                Seans yopilganda o'yin vaqti ushbu paketdan avtomatik chegiriladi.
+              </p>
+            </div>
+          )}
+
           {d.status !== 'CLOSED' && (
-            <section>
-              <h3 className="mb-2 text-xs text-slate-400">Bufet — tez tugmalar</h3>
-              {quick.length === 0 ? (
-                <p className="text-sm text-slate-500">Tez tugmali mahsulot yo'q.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {quick.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      disabled={!d.totals.canAddService || addItem.isPending}
-                      onClick={() => addItem.mutate(p.id)}
-                      className="tap rounded-lg bg-slate-800 px-3 py-2 text-sm transition hover:bg-slate-700 disabled:opacity-40"
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs text-slate-400">Bufet — mahsulot qo'shish</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowCatalog((v) => !v)}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 transition"
+                >
+                  {showCatalog ? '▲ Katalogni yashirish' : '▼ Barcha tovarlar (qidiruv va miqdor)'}
+                </button>
+              </div>
+
+              {quick.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] text-slate-500 uppercase tracking-wider">Tezkor tugmalar</p>
+                  <div className="flex flex-wrap gap-2">
+                    {quick.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={!d.totals.canAddService || addItem.isPending}
+                        onClick={() => addItem.mutate({ productId: p.id, qty: 1 })}
+                        className="tap rounded-lg bg-slate-800 px-3 py-2 text-sm transition hover:bg-slate-700 disabled:opacity-40"
+                      >
+                        {p.name} · {summa(p.salePrice)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showCatalog && (
+                <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 text-sm">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={catalogSearch}
+                      onChange={(e) => setCatalogSearch(e.target.value)}
+                      placeholder="Mahsulot nomini qidirish…"
+                      className={`${inputClass} flex-1`}
+                    />
+                    <select
+                      value={catalogProductId}
+                      onChange={(e) => setCatalogProductId(e.target.value)}
+                      className={`${inputClass} flex-1`}
                     >
-                      {p.name} · {summa(p.salePrice)}
-                    </button>
-                  ))}
+                      <option value="">Mahsulotni tanlang…</option>
+                      {(products.data ?? [])
+                        .filter(
+                          (p) =>
+                            p.stockQty > 0 &&
+                            (!catalogSearch.trim() ||
+                              p.name.toLowerCase().includes(catalogSearch.toLowerCase().trim())),
+                        )
+                        .map((p) => (
+                          <option key={p.id} value={p.id} className="bg-slate-900">
+                            {p.name} — {summa(p.salePrice)} so'm (qoldiq: {p.stockQty})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {catalogProductId && (
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">Miqdor:</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setCatalogQty((q) => String(Math.max(1, (Number(q) || 1) - 1)))}
+                            className="tap rounded bg-slate-800 px-2.5 py-1 text-sm hover:bg-slate-700"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            max={products.data?.find((p) => p.id === catalogProductId)?.stockQty ?? 99}
+                            value={catalogQty}
+                            onChange={(e) => setCatalogQty(e.target.value)}
+                            className="w-16 rounded bg-slate-800 px-2 py-1 text-center text-sm outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const max = products.data?.find((p) => p.id === catalogProductId)?.stockQty ?? 99;
+                              setCatalogQty((q) => String(Math.min(max, (Number(q) || 1) + 1)));
+                            }}
+                            className="tap rounded bg-slate-800 px-2.5 py-1 text-sm hover:bg-slate-700"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={
+                          !d.totals.canAddService ||
+                          addItem.isPending ||
+                          !catalogProductId ||
+                          Number(catalogQty) <= 0
+                        }
+                        onClick={() =>
+                          addItem.mutate({
+                            productId: catalogProductId,
+                            qty: Math.max(1, Number(catalogQty) || 1),
+                          })
+                        }
+                        className="tap rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40"
+                      >
+                        {addItem.isPending ? 'Qo\'shilmoqda…' : 'Seansga qo\'shish'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
